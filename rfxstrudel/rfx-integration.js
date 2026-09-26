@@ -1,0 +1,1355 @@
+// RFX Effects & Synths Integration for Strudel
+// Makes RFX synths and effects available as Strudel pattern methods
+
+export class RFXIntegration {
+    constructor() {
+        this.audioContext = null;
+        this.synths = new Map(); // { name: synthInfo }
+        this.loadedSynths = new Map(); // { name: wasmInstance }
+        this.loadingSynths = new Set(); // Track synths currently loading
+        this.effects = new Map(); // { name: effectNode }
+        this.synthParams = new Map(); // Store parameter values per synth
+        this.scheduledNotes = new Set(); // Track scheduled setTimeout IDs
+        this.activeNotes = new Map(); // Track currently playing notes: Map<synthName, Set<noteNumber>>
+
+        // Synth instance tracking with IDs
+        this.synthInstanceCounter = 0;
+        this.synthInstances = new Map(); // { instanceId: { name, instance, params, metadata } }
+
+        // Master effects processor
+        this.effectsProcessor = null;
+        this.effectsProcessorReady = false;
+        this.mixerGain = null; // All synths connect here
+
+        // Note name to MIDI number conversion
+        this.noteMap = {};
+        const noteNames = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
+        for (let octave = -1; octave <= 9; octave++) {
+            for (let i = 0; i < noteNames.length; i++) {
+                const noteName = noteNames[i] + octave;
+                const midiNote = (octave + 1) * 12 + i;
+                this.noteMap[noteName] = midiNote;
+                // Also support 'db' instead of 'c#', etc.
+                if (noteNames[i].includes('#')) {
+                    const flatName = String.fromCharCode(noteNames[i].charCodeAt(0) + 1) + 'b' + octave;
+                    this.noteMap[flatName] = midiNote;
+                }
+            }
+        }
+
+        this.params = new Proxy({}, {
+            get: (target, prop) => {
+                if (!(prop in target)) {
+                    target[prop] = 0.5; // Default value
+                    // console.log(`🎛️ Creating new param: ${prop}`);
+                    // Notify UI to create a knob
+                    window.dispatchEvent(new CustomEvent('rfx:newparam', {
+                        detail: { name: prop, value: 0.5 }
+                    }));
+                }
+                return target[prop];
+            },
+            set: (target, prop, value) => {
+                // console.log(`🎛️ Proxy setter: ${prop} = ${value}`);
+
+                // Handle scoped parameters
+                if (prop.includes(':')) {
+                    const parts = prop.split(':');
+
+                    // Master effects: master:effectname:param (e.g., master:delay:time)
+                    // Don't store in target to avoid auto-creating knobs
+                    if (parts[0] === 'master' && parts.length === 3) {
+                        const [, effectName, paramName] = parts;
+                        this.setEffectParam(effectName, paramName, value);
+                        return true; // Don't store in target
+                    }
+                    // Synth label: label:param (e.g., r:cutoff)
+                    else if (parts.length === 2) {
+                        target[prop] = value;
+                        const [label, paramName] = parts;
+                        this.updateParameterForLabel(label, paramName, value);
+                    }
+                } else {
+                    target[prop] = value;
+                    // Update all loaded synths that have this parameter (unscoped)
+                    this.updateParameterAllSynths(prop, value);
+                }
+
+                return true;
+            }
+        });
+
+        // Expose params globally for Strudel patterns
+        window.rfxParams = this.params;
+    }
+
+    async init(audioContext) {
+        this.audioContext = audioContext;
+        console.log('🎹 Initializing RFX Integration...');
+
+        // Create mixer gain node (all synths will connect here)
+        this.mixerGain = this.audioContext.createGain();
+        this.mixerGain.gain.value = 1.0;
+
+        // Connect mixer directly to destination initially (bypass effects)
+        this.mixerGain.connect(this.audioContext.destination);
+
+        // Effects will be initialized on-demand when first effect is enabled
+        // This avoids unnecessary overhead when effects aren't being used
+
+        // Load available synths
+        await this.loadSynths();
+
+        console.log('✅ RFX Integration ready');
+    }
+
+    async initEffectsProcessor() {
+        console.log('🎛️ Initializing Master Effects Processor...');
+
+        try {
+            // Load WASM effects files
+            const [jsResponse, wasmResponse] = await Promise.all([
+                fetch('../rfxplayer/regroove-effects.js'),
+                fetch('../rfxplayer/regroove-effects.wasm')
+            ]);
+
+            console.log('📡 WASM fetch status - JS:', jsResponse.ok, 'WASM:', wasmResponse.ok);
+
+            if (!jsResponse.ok || !wasmResponse.ok) {
+                console.error('⚠️ Effects WASM files not found - effects disabled');
+                console.error('  JS status:', jsResponse.status, 'WASM status:', wasmResponse.status);
+                // Fallback: connect mixer directly to destination
+                this.mixerGain.connect(this.audioContext.destination);
+                console.log('🔊 FALLBACK routing: Synths → Mixer → Destination (no effects)');
+                return;
+            }
+
+            const jsCode = await jsResponse.text();
+            const wasmBytes = await wasmResponse.arrayBuffer();
+
+            console.log(`📦 Loaded effects WASM: ${(wasmBytes.byteLength / 1024).toFixed(1)} KB`);
+
+            // Register AudioWorklet processor (with cache buster)
+            await this.audioContext.audioWorklet.addModule(`../replugged/worklets/audio-worklet-processor.js?v=${Date.now()}`);
+
+            // Create worklet node
+            this.effectsProcessor = new AudioWorkletNode(this.audioContext, 'wasm-effects-processor');
+            console.log('🔧 Effects worklet node created');
+
+            // Set up persistent message handler
+            this.effectsProcessor.port.onmessage = (e) => {
+                const { type, data } = e.data;
+
+                if (type === 'needWasm') {
+                    console.log('📨 Sending effects WASM to worklet...');
+                    this.effectsProcessor.port.postMessage({
+                        type: 'wasmBytes',
+                        data: { jsCode, wasmBytes }
+                    }, [wasmBytes]);
+                } else if (type === 'ready') {
+                    console.log('✅ Effects worklet ready');
+                    this.effectsProcessorReady = true;
+                } else if (type === 'error') {
+                    console.error('❌ Effects worklet error:', data);
+                } else if (type === 'peakLevel') {
+                    // Peak level monitoring (can be used later)
+                } else if (type === 'stereoPeaks') {
+                    // Stereo peaks (can be used later)
+                }
+            };
+
+            // Wait for worklet to be ready
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('Effects worklet timeout')), 10000);
+
+                const checkReady = (e) => {
+                    if (e.data.type === 'ready') {
+                        clearTimeout(timeout);
+                        resolve();
+                    } else if (e.data.type === 'error') {
+                        clearTimeout(timeout);
+                        reject(new Error(`Effects worklet: ${e.data.error}`));
+                    }
+                };
+
+                // Listen for ready/error during init
+                const originalHandler = this.effectsProcessor.port.onmessage;
+                this.effectsProcessor.port.onmessage = (e) => {
+                    originalHandler(e); // Keep the persistent handler running
+                    checkReady(e);
+                };
+            });
+
+            // Disconnect mixer from direct destination connection
+            this.mixerGain.disconnect();
+
+            // Audio routing: synths → mixerGain → effectsProcessor → destination
+            this.mixerGain.connect(this.effectsProcessor);
+            this.effectsProcessor.connect(this.audioContext.destination);
+
+            console.log('🔊 Audio routing switched: Synths → Mixer → Effects → Destination');
+        } catch (error) {
+            console.warn('⚠️ Failed to initialize effects processor:', error);
+            // Fallback: connect mixer directly to destination
+            this.mixerGain.connect(this.audioContext.destination);
+            console.log('🔊 Audio routing (fallback): Synths → Mixer → Destination');
+        }
+    }
+
+    async loadSynths() {
+        // List of available RFX synths
+        const synthModules = [
+            // The sample-based TR-909, on the shared regroove_synth_* ABI. It is
+            // also the drumMap's default engine below, because it is the only one
+            // of the drums that plays the whole GM kit -- s("hh") needs a hi-hat.
+            { name: 'rg909', js: '../rfxsynths/rg909-synth.js', wasm: '../rfxsynths/rg909-synth.wasm' },
+            { name: 'rgahx', js: '../rfxsynths/rgahxsynth.js', wasm: '../rfxsynths/rgahxsynth.wasm' },
+            { name: 'rgahxdrum', js: '../rfxsynths/rgahx-drum-synth.js', wasm: '../rfxsynths/rgahx-drum-synth.wasm' },
+            { name: 'rgsid', js: '../rfxsynths/rgsidsynth.js', wasm: '../rfxsynths/rgsidsynth.wasm' },
+            { name: 'rgresonate1', js: '../rfxsynths/rgresonate1-synth.js', wasm: '../rfxsynths/rgresonate1-synth.wasm' },
+            { name: 'rvbass', js: '../rfxsynths/rvbass.js', wasm: '../rfxsynths/rvbass.wasm' },
+            { name: 'rvkeys', js: '../rfxsynths/rvkeys.js', wasm: '../rfxsynths/rvkeys.wasm' },
+            { name: 'rg1piano', js: '../rfxsynths/rg1piano.js', wasm: '../rfxsynths/rg1piano.wasm' },
+        ];
+
+        for (const synth of synthModules) {
+            this.synths.set(synth.name, synth);
+            console.log(`📦 Registered synth: ${synth.name}`);
+        }
+
+        // GM drum mapping for sample names
+        this.drumMap = {
+            // Kick variations
+            'bd': 36, 'kick': 36, 'bassdrum': 36,
+            // Snare variations
+            'sd': 38, 'snare': 38, 'sn': 38,
+            // Rimshot
+            'rim': 37, 'rimshot': 37,
+            // Hi-hats
+            'hh': 42, 'hihat': 42, 'chh': 42, 'closedhh': 42,
+            'oh': 46, 'openhh': 46, 'openhat': 46,
+            // Toms
+            'lt': 41, 'lowtom': 41,
+            'mt': 47, 'midtom': 47,
+            'ht': 50, 'hightom': 50,
+            // Clap
+            'cp': 39, 'clap': 39, 'handclap': 39,
+            // Crash
+            'crash': 49, 'cr': 49,
+            // Ride
+            'ride': 51, 'rd': 51
+        };
+    }
+
+    // Register RFX synths with Strudel
+    registerStrudelMethods() {
+        // Register synths by name (e.g., s("rgahxdrum"))
+        if (window.superdough?.registerSound) {
+            for (const [name] of this.synths) {
+                window.superdough.registerSound(name, async (t, value, onended) => {
+                    await this.playRFXSynth(name, value, t);
+                    if (onended) onended();
+                });
+            }
+        } else if (window.registerSound) {
+            for (const [name] of this.synths) {
+                window.registerSound(name, (time, hap) => {
+                    this.playRFXSynth(name, hap, time);
+                });
+            }
+        } else {
+            console.warn('⚠️ No sound registration API found');
+        }
+
+        // Also register drum sample names to trigger drums
+        // This allows s("bd hh sd") syntax
+        if (window.registerSound) {
+            for (const sampleName of Object.keys(this.drumMap)) {
+                window.registerSound(sampleName, (time, hap) => {
+                    // rg909 is the default drum engine for sample names, and it has
+                    // to be one that plays the whole kit: drumMap spans kick, snare,
+                    // rim, both hats, three toms, clap, crash and ride, and RGAHX
+                    // drum has a kick and a snare and nothing else, so s("hh") and
+                    // the toms fell silent on it.
+                    this.playRFXSynth('rg909', { ...hap, s: sampleName }, time);
+                });
+            }
+            console.log(`✅ Registered ${Object.keys(this.drumMap).length} drum sample names`);
+        }
+
+        // Add .knob() method to Pattern
+        // Usage: note("c2 ~ e2 ~").s("rvbass").knob("cutoff").bpm(120)
+        if (window.Pattern?.prototype) {
+            window.Pattern.prototype.knob = function(paramName) {
+                return this.fmap(hap => {
+                    // Mark this parameter as active for this synth
+                    // Don't create the knob yet - wait until playback when we have the label
+                    if (!hap._rfx_knobs) {
+                        hap._rfx_knobs = [];
+                    }
+                    hap._rfx_knobs.push(paramName);
+
+                    return hap;
+                });
+            };
+
+            // Add .bpm() method - converts BPM to CPM
+            window.Pattern.prototype.bpm = function(beatsPerMinute) {
+                const cyclesPerMinute = beatsPerMinute / 2;
+                return this.cpm(cyclesPerMinute);
+            };
+
+            // Add .vel() method - set constant velocity (0.0-1.0)
+            window.Pattern.prototype.vel = function(velocityValue) {
+                return this.velocity(velocityValue);
+            };
+
+            console.log('✅ Registered .knob(), .bpm(), and .vel() pattern methods');
+        } else {
+            console.warn('⚠️ Pattern.prototype not found, .knob() and .bpm() methods not registered');
+        }
+    }
+
+    // Play RFX synth when triggered by Strudel
+    async playRFXSynth(synthName, hap, time) {
+        const synthInfo = this.synths.get(synthName);
+        if (!synthInfo) return;
+
+        // Determine label for this hap (used to separate instances)
+        const patternLabel = hap._label || 'unlabeled';
+
+        // Create unique key for this synth+label combination
+        const instanceKey = `${synthName}:${patternLabel}`;
+
+        // Find or create synth instance for this label
+        let assignedInstance = null;
+        for (const inst of this.synthInstances.values()) {
+            if (inst.name === synthName && inst.label === patternLabel) {
+                assignedInstance = inst;
+                break;
+            }
+        }
+
+        // Load new instance if needed
+        if (!assignedInstance) {
+            console.log(`📦 Loading new ${synthName} instance for label "${patternLabel}"`);
+            const loadStart = performance.now();
+
+            // Check if already loading this specific instance
+            if (this.loadingSynths.has(instanceKey)) {
+                // Wait for it to finish loading
+                while (this.loadingSynths.has(instanceKey)) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            } else {
+                this.loadingSynths.add(instanceKey);
+                await this.loadWASMSynth(synthName, synthInfo, patternLabel);
+                this.loadingSynths.delete(instanceKey);
+            }
+            console.log(`⏱️ ${synthName}:${patternLabel} loaded in ${(performance.now() - loadStart).toFixed(0)}ms`);
+
+            // Find the newly created instance
+            for (const inst of this.synthInstances.values()) {
+                if (inst.name === synthName && inst.label === patternLabel) {
+                    assignedInstance = inst;
+                    break;
+                }
+            }
+        }
+
+        // Get label to use for scoping (pattern label or instance ID)
+        const scopeLabel = patternLabel !== 'unlabeled' ? patternLabel : (assignedInstance ? assignedInstance.id : synthName);
+
+        // Create scoped knobs if pattern has .knob() calls
+        if (hap._rfx_knobs && hap._rfx_knobs.length > 0) {
+            for (const paramName of hap._rfx_knobs) {
+                const scopedName = `${scopeLabel}:${paramName}`;
+
+                // Access rfxParams to ensure it exists (triggers proxy)
+                if (!(scopedName in window.rfxParams)) {
+                    window.rfxParams[scopedName] = 0.5;
+                    // Emit event to create knob
+                    window.dispatchEvent(new CustomEvent('rfx:newparam', {
+                        detail: {
+                            name: scopedName,
+                            value: 0.5,
+                            label: scopeLabel,
+                            paramName: paramName
+                        }
+                    }));
+                }
+            }
+        }
+
+        // Get the synth instance for this specific label
+        const synthInstance = this.loadedSynths.get(instanceKey);
+        if (!synthInstance) {
+            console.error(`Synth instance not found for key: ${instanceKey}`);
+            return;
+        }
+
+        // Knobs are now handled globally via updateParameterAllSynths/updateParameterForLabel
+        // when the knob value changes, not on every note trigger
+        // This prevents stuttering and allows smooth live control
+
+        // Get note from hap - support MIDI numbers, note names, sample names, and CHORDS (arrays)
+        let notes = hap.note || 60;
+
+        // Convert to array for unified handling (chords come as arrays)
+        if (!Array.isArray(notes)) {
+            notes = [notes];
+        }
+
+        // Convert each note name to MIDI number if needed
+        notes = notes.map(note => {
+            // If hap has 's' (sample name), map it to MIDI note
+            if (hap.s && this.drumMap[hap.s]) {
+                return this.drumMap[hap.s];
+            }
+
+            // Convert note name to MIDI number if it's a string
+            if (typeof note === 'string') {
+                const noteLower = note.toLowerCase();
+                // Check note map first (c4, d#5, etc.)
+                let midiNote = this.noteMap[noteLower];
+                // If not found, check drum map (bd, sd, hh, etc.)
+                if (midiNote === undefined) {
+                    midiNote = this.drumMap[noteLower];
+                }
+                if (midiNote !== undefined) {
+                    return midiNote;
+                } else {
+                    console.warn(`Unknown note name: ${note}, defaulting to 60`);
+                    return 60;
+                }
+            }
+
+            // Already a MIDI number
+            return note;
+        });
+
+        // Use constant velocity unless explicitly set in pattern
+        // Strudel sometimes sets very low velocity values (0.01-0.1) which makes synths inaudible
+        // Always use full velocity for RFX synths (Strudel's velocity handling is inconsistent)
+        let velocity = hap.velocity !== undefined ? hap.velocity : 1.0;
+
+        // CRITICAL FIX: Strudel passes extremely low velocities (0.01) which makes synths silent
+        // Always boost to minimum 0.8 for audibility
+        if (velocity < 0.5) {
+            console.log(`⚠️ Boosting low velocity for ${synthName}: ${velocity.toFixed(3)} → 0.8`);
+            velocity = 0.8;
+        }
+
+        const duration = hap.duration || 0.5;
+
+        // Apply init parameters (once per unique set of params)
+        // Compare params to detect changes (e.g., on re-eval)
+        if (hap._rfx_init_params && synthInstance.setParameter) {
+            const paramsKey = JSON.stringify(hap._rfx_init_params);
+            if (synthInstance._lastInitParams !== paramsKey) {
+                synthInstance._lastInitParams = paramsKey;
+                console.log(`[${synthName}] Applying init params:`, hap._rfx_init_params);
+                for (const [paramName, value] of Object.entries(hap._rfx_init_params)) {
+                    // Support both index numbers and names
+                    let paramIndex = parseInt(paramName);
+                    let paramInfo = null;
+                    if (isNaN(paramIndex)) {
+                        paramInfo = this.getParameterByName(synthName, paramName);
+                        if (!paramInfo) {
+                            console.warn(`[${synthName}] Init param "${paramName}" not found`);
+                            continue;
+                        }
+                        paramIndex = paramInfo.index;
+                    } else {
+                        // Get param info for index
+                        if (synthInstance.parameterInfo && synthInstance.parameterInfo[paramIndex]) {
+                            paramInfo = synthInstance.parameterInfo[paramIndex];
+                        }
+                    }
+
+                    console.log(`[${synthName}] Setting ${paramName} (index ${paramIndex}) = ${value}`);
+                    // Use setParameter which handles int/enum routing internally
+                    synthInstance.setParameter(paramIndex, value);
+                }
+            }
+        }
+
+        // Apply explicit param_* values from the hap (for per-note parameter changes)
+        // Global knob parameters are already set via updateParameterAllSynths() when knobs change
+        if (synthInstance.setParameter) {
+            for (const [key, value] of Object.entries(hap)) {
+                if (key.startsWith('param_')) {
+                    const paramName = key.substring(6); // Remove 'param_' prefix
+
+                    // Support both index numbers and names
+                    let paramIndex = parseInt(paramName);
+                    if (isNaN(paramIndex)) {
+                        // Try to find by name
+                        const paramInfo = this.getParameterByName(synthName, paramName);
+                        if (paramInfo) {
+                            paramIndex = paramInfo.index;
+                        } else {
+                            console.warn(`[${synthName}] Parameter "${paramName}" not found, skipping`);
+                            continue;
+                        }
+                    }
+
+                    // Normalize value to 0-1 range if it's 0-127
+                    let normalizedValue = value;
+                    if (value > 1) {
+                        normalizedValue = value / 127;
+                    }
+
+                    synthInstance.setParameter(paramIndex, normalizedValue);
+                }
+            }
+        }
+
+        // Calculate clock offset on first note, then use it for all notes
+        const now = this.audioContext.currentTime;
+        if (this.clockOffset === undefined) {
+            this.clockOffset = time - now;
+            console.log(`🕐 Clock offset: ${this.clockOffset.toFixed(2)}s (Strudel ahead of AudioContext)`);
+        }
+
+        // Adjust Strudel's time by the offset to sync with AudioContext
+        const adjustedTime = time - this.clockOffset;
+        const delaySeconds = Math.max(0, adjustedTime - now);
+        const delayMs = delaySeconds * 1000;
+
+        // Schedule note trigger (immediate) - handle CHORDS (multiple notes)
+        const timeoutId = setTimeout(() => {
+            this.scheduledNotes.delete(timeoutId);
+            try {
+                // Track active notes for this instance
+                if (!this.activeNotes.has(instanceKey)) {
+                    this.activeNotes.set(instanceKey, new Set());
+                }
+
+                // Trigger all notes in the chord
+                for (const note of notes) {
+                    synthInstance.noteOn(note, velocity);
+                    this.activeNotes.get(instanceKey).add(note);
+                }
+
+                // Schedule note off for all notes in the chord
+                const offTimeoutId = setTimeout(() => {
+                    this.scheduledNotes.delete(offTimeoutId);
+
+                    for (const note of notes) {
+                        synthInstance.noteOff(note);
+
+                        // Remove from active notes
+                        const activeSet = this.activeNotes.get(instanceKey);
+                        if (activeSet) {
+                            activeSet.delete(note);
+                            if (activeSet.size === 0) {
+                                this.activeNotes.delete(instanceKey);
+                            }
+                        }
+                    }
+                }, duration * 1000);
+                this.scheduledNotes.add(offTimeoutId);
+            } catch (error) {
+                console.error(`❌ Error playing ${instanceKey}:`, error);
+            }
+        }, delayMs);
+        this.scheduledNotes.add(timeoutId);
+    }
+
+    // Load WASM synth module using AudioWorklet wrapper classes
+    async loadWASMSynth(name, synthInfo, label = null) {
+        try {
+            const loadStart = performance.now();
+            console.log(`📦 Loading synth: ${name}${label ? ` (label: ${label})` : ''}`);
+
+            // Use AudioWorklet wrapper classes from SynthRegistry
+            if (typeof window.SynthRegistry !== 'undefined') {
+                try {
+                    // Ensure synth class is loaded
+                    if (!window.SynthRegistry.has(name)) {
+                        await window.SynthRegistry.loadSynthClass(name);
+                    }
+
+                    const synthDescriptor = window.SynthRegistry.get(name);
+                    if (synthDescriptor && synthDescriptor.class) {
+                        console.log(`Creating ${name} instance using AudioWorklet wrapper...`);
+                        const synthInstance = new synthDescriptor.class(this.audioContext);
+
+                        // Initialize the synth
+                        await synthInstance.initialize();
+
+                        // Make sure AudioContext is running
+                        if (this.audioContext.state !== 'running') {
+                            console.warn(`⚠️ AudioContext state: ${this.audioContext.state} - attempting to resume`);
+                            await this.audioContext.resume();
+                            console.log(`✓ AudioContext resumed to: ${this.audioContext.state}`);
+                        }
+
+                        // Connect to mixer.
+                        //
+                        // The wrapper classes in web/replugged/components/ expose
+                        // their output node as `masterGain`; none of them has ever
+                        // had a connect() method. This line used to call
+                        // synthInstance.connect() unconditionally, so it threw for
+                        // every synth, the catch below swallowed it, and every
+                        // Strudel voice ended up on the deprecated ScriptProcessor
+                        // path instead of the AudioWorklet this branch is for.
+                        if (typeof synthInstance.connect === 'function') {
+                            synthInstance.connect(this.mixerGain);
+                        } else if (synthInstance.masterGain) {
+                            synthInstance.masterGain.connect(this.mixerGain);
+                        } else {
+                            throw new Error(`${name}: no connect() and no masterGain to connect`);
+                        }
+
+                        // Get parameter info
+                        const parameterInfo = synthDescriptor.getParameterInfo ? synthDescriptor.getParameterInfo() : null;
+                        if (parameterInfo) {
+                            console.log(`[${name}] Loaded ${parameterInfo.length} parameter definitions`);
+                        }
+
+                        // Add parameter info to instance
+                        synthInstance.parameterInfo = parameterInfo;
+
+                        // Store instance
+                        const instanceKey = label ? `${name}:${label}` : name;
+                        this.loadedSynths.set(instanceKey, synthInstance);
+
+                        const instanceId = `${name}_${this.synthInstanceCounter++}`;
+                        this.synthInstances.set(instanceId, {
+                            id: instanceId,
+                            name: name,
+                            instance: synthInstance,
+                            params: this.synthParams.get(name) || new Map(),
+                            metadata: synthInfo,
+                            label: label
+                        });
+
+                        window.dispatchEvent(new CustomEvent('rfx:synthLoaded', {
+                            detail: { id: instanceId, name: name, label: label }
+                        }));
+
+                        const loadTime = Math.round(performance.now() - loadStart);
+                        console.log(`✅ Loaded ${name} (AudioWorklet) in ${loadTime}ms`);
+                        console.log(`⏱️ ${instanceKey} loaded in ${loadTime}ms`);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn(`Failed to load ${name} via AudioWorklet wrapper:`, error.message);
+                    console.log('Falling back to legacy ScriptProcessor...');
+                }
+            }
+
+            // FALLBACK: Legacy ScriptProcessor code (deprecated)
+            console.log(`📦 Loading WASM synth (legacy ScriptProcessor): ${name}`);
+
+            // First, load the synth wrapper class from SynthRegistry (for parameter metadata)
+            // Only if not already registered
+            if (typeof window.SynthRegistry !== 'undefined' && !window.SynthRegistry.has(name)) {
+                try {
+                    await window.SynthRegistry.loadSynthClass(name);
+                    // console.log(`✓ Loaded wrapper class for ${name}`);
+                } catch (error) {
+                    // Silently ignore - not all synths have wrapper classes
+                    // console.warn(`Failed to load wrapper class for ${name}:`, error);
+                }
+            }
+
+            // Fetch the JS code as text (can't capture memory from script tag)
+            const response = await fetch(synthInfo.js);
+            const jsCode = await response.text();
+
+
+            // Find the module name from the JS code
+            const match = jsCode.match(/var (\w+Module)=/);
+            if (!match) {
+                throw new Error('Could not find Module name in JS code');
+            }
+            const moduleName = match[1];
+            console.log(`Found module name: ${moduleName}`);
+
+            // Modify the code to:
+            // 1. Inject memory capture
+            // 2. Make the module global instead of local var
+            let modifiedCode = jsCode
+                .replace(';return moduleRtn', ';globalThis.__wasmMemory=wasmMemory;return moduleRtn')
+                .replace(`var ${moduleName}=`, `globalThis.${moduleName}=`);
+
+            // Eval the modified code
+            eval(modifiedCode);
+
+            // Get the factory from global
+            const ModuleFactory = globalThis[moduleName];
+
+            if (!ModuleFactory) {
+                throw new Error(`Module factory ${moduleName} not found on globalThis`);
+            }
+
+            console.log(`✓ Got ${moduleName} factory`);
+
+            // Fetch WASM bytes
+            const wasmResponse = await fetch(synthInfo.wasm);
+            const wasmBytes = await wasmResponse.arrayBuffer();
+
+            // Call the factory with WASM bytes
+            const wasmModule = await ModuleFactory({
+                wasmBinary: wasmBytes
+            });
+
+            // Capture the memory reference that was injected
+            const wasmMemory = globalThis.__wasmMemory;
+            delete globalThis.__wasmMemory;
+
+            if (!wasmMemory) {
+                throw new Error('wasmMemory was not captured');
+            }
+
+            console.log(`✓ Got WASM memory, buffer size: ${wasmMemory.buffer.byteLength}`);
+
+            // Detect which ABI this module speaks from its exports, not its name.
+            //
+            // `_<name>_create` is the older per-engine drum ABI; `_regroove_synth_create`
+            // is the shared one every engine here now speaks. The name used to be
+            // the witness -- `name.includes('909')` picked the four-argument
+            // process() -- and that stopped being true when s("rg909") became the
+            // sample-based machine on the shared ABI, because on that ABI *every*
+            // engine takes a rate per call whether it is a drum or not.
+            const isDrum = !!wasmModule[`_${name}_create`];
+            const isSynth = !!wasmModule._regroove_synth_create;
+
+            let createFunc, triggerFunc, processFunc;
+
+            if (isDrum) {
+                // Drum API: _<name>_create, _<name>_trigger, _<name>_process
+                createFunc = wasmModule[`_${name}_create`];
+                triggerFunc = wasmModule[`_${name}_trigger`] || wasmModule[`_${name}_trigger_drum`];
+                processFunc = wasmModule[`_${name}_process`] || wasmModule[`_${name}_process_f32`];
+            } else if (isSynth) {
+                // Synth API: _regroove_synth_create, _regroove_synth_note_on, _regroove_synth_process_f32
+                createFunc = wasmModule._regroove_synth_create;
+                triggerFunc = wasmModule._regroove_synth_note_on;
+                processFunc = wasmModule._regroove_synth_process_f32;
+            } else {
+                throw new Error(`${name} has unknown API`);
+            }
+
+            if (!createFunc || !triggerFunc || !processFunc) {
+                throw new Error(`${name} missing required functions`);
+            }
+
+            const createSampleRate = this.audioContext.sampleRate;
+            console.log(`Creating ${name} with sampleRate=${createSampleRate}`);
+            const synthPtr = createFunc(createSampleRate);
+            console.log(`Created synth instance, ptr=${synthPtr}, sampleRate=${createSampleRate}`);
+
+            // Detect the process() shape, again from the exports rather than the
+            // name. Two signatures exist in the wild:
+            //
+            //   (ptr, buf, frames, rate), stereo interleaved -- the shared ABI, and
+            //       the older drum ABI's *_process_f32 (the retired rg909/rd404)
+            //   (ptr, buf, frames), mono -- the older drum ABI's *_process, which
+            //       only RGAHX drum ever used
+            //
+            // The rate is the reliable tell: nothing on the shared ABI can omit it,
+            // while the mono one has no settable rate to pass at all.
+            const takesRateInProcess = isSynth || !!wasmModule[`_${name}_process_f32`];
+            const isStereoOutput = takesRateInProcess;
+
+            // Create ScriptProcessor for audio output
+            const bufferSize = 512;
+            const processor = this.audioContext.createScriptProcessor(bufferSize, 0, 2);
+
+            // Allocate buffer (stereo for RG909/synths, mono for RGAHX drums)
+            const channelCount = isStereoOutput ? 2 : 1;
+            const outputBuffer = wasmModule._malloc(bufferSize * 4 * channelCount); // float32
+
+            const sampleRate = this.audioContext.sampleRate;
+            processor.onaudioprocess = (e) => {
+                // Process audio from WASM
+                // Stereo ABI: 4 params (ptr, buffer, frames, sampleRate)
+                // Legacy mono drums: 3 params (ptr, buffer, frames)
+                if (takesRateInProcess) {
+                    processFunc(synthPtr, outputBuffer, bufferSize, sampleRate);
+                } else {
+                    processFunc(synthPtr, outputBuffer, bufferSize);
+                }
+
+                // Create Float32Array view of the WASM buffer
+                const heapF32 = new Float32Array(
+                    wasmMemory.buffer,
+                    outputBuffer,
+                    bufferSize * channelCount
+                );
+
+                const left = e.outputBuffer.getChannelData(0);
+                const right = e.outputBuffer.getChannelData(1);
+
+                if (isStereoOutput) {
+                    // De-interleave stereo output (the shared ABI)
+                    for (let i = 0; i < bufferSize; i++) {
+                        left[i] = heapF32[i * 2];
+                        right[i] = heapF32[i * 2 + 1];
+                    }
+                } else {
+                    // Mono output, duplicate to both channels (legacy RGAHX drums)
+                    for (let i = 0; i < bufferSize; i++) {
+                        const sample = heapF32[i];
+                        left[i] = sample;
+                        right[i] = sample;
+                    }
+                }
+            };
+
+            // Connect synth to mixer (which routes through effects processor)
+            processor.connect(this.mixerGain);
+
+            // Make sure AudioContext is running
+            if (this.audioContext.state !== 'running') {
+                console.warn(`⚠️ AudioContext state: ${this.audioContext.state} - attempting to resume`);
+                await this.audioContext.resume();
+                console.log(`AudioContext state after resume: ${this.audioContext.state}`);
+            } else {
+                console.log(`✓ AudioContext is running`);
+            }
+
+            // Get parameter info from SynthRegistry (if available)
+            let parameterInfo = null;
+            if (isSynth) {
+                // Try to get parameter metadata from SynthRegistry
+                if (typeof window.SynthRegistry !== 'undefined') {
+                    try {
+                        const synthDescriptor = window.SynthRegistry.get(name);
+                        if (synthDescriptor && synthDescriptor.getParameterInfo) {
+                            parameterInfo = synthDescriptor.getParameterInfo();
+                            console.log(`[${name}] Loaded ${parameterInfo.length} parameter definitions from SynthRegistry`);
+                            // Log parameter names for debugging
+                            const paramNames = parameterInfo.map(p => `${p.index}:${p.name}`).join(', ');
+                            console.log(`[${name}] Parameters: ${paramNames}`);
+                        } else {
+                            console.warn(`[${name}] Not found in SynthRegistry or missing getParameterInfo`);
+                        }
+                    } catch (error) {
+                        console.warn(`[${name}] Failed to get parameter info from registry:`, error);
+                    }
+                }
+
+                // Fallback: just get parameter count from WASM
+                if (!parameterInfo && wasmModule._regroove_synth_get_parameter_count) {
+                    const paramCount = wasmModule._regroove_synth_get_parameter_count(synthPtr);
+                    console.log(`[${name}] Has ${paramCount} parameters (use param_0, param_1, ... param_${paramCount-1})`);
+                    parameterInfo = [];
+                }
+            }
+
+            // Create audio worklet wrapper
+            const synthInstance = {
+                module: wasmModule,
+                memory: wasmMemory,
+                synthPtr,
+                processor,
+                isDrum,
+                isSynth,
+                parameterInfo,
+                setParameter: isSynth && wasmModule._regroove_synth_set_parameter
+                    ? (index, value) => {
+                        // Check if this parameter is an integer type and use appropriate API
+                        const param = parameterInfo && parameterInfo.find(p => p.index === index);
+                        const useIntAPI = param && (param.type === 'int' || param.type === 'boolean' || param.enum_values);
+
+                        if (useIntAPI && wasmModule._regroove_synth_set_parameter_int) {
+                            // Use integer API for int/boolean/enum parameters
+                            wasmModule._regroove_synth_set_parameter_int(synthPtr, index, Math.floor(value));
+                        } else {
+                            // Use normalized API for float parameters
+                            wasmModule._regroove_synth_set_parameter(synthPtr, index, value);
+                        }
+                    }
+                    : null,
+                noteOn: (note, velocity = 0.8) => {
+                    const vel = Math.floor(velocity * 127);
+                    // console.log(`[${name}] noteOn: note=${note}, vel=${vel}, isDrum=${isDrum}, isSynth=${isSynth}`);
+                    if (isDrum) {
+                        // Legacy drum API. Its trigger took the rate on the engines
+                        // whose process() took one -- the same tell as above --
+                        // because a trigger has no rate of its own to carry.
+                        if (takesRateInProcess) {
+                            triggerFunc(synthPtr, note, vel, this.audioContext.sampleRate);
+                        } else {
+                            triggerFunc(synthPtr, note, vel);
+                        }
+                    } else if (isSynth) {
+                        // Synth API: _regroove_synth_note_on(ptr, note, velocity)
+                        triggerFunc(synthPtr, note, vel);
+                    }
+                },
+                noteOff: (note) => {
+                    if (isSynth && wasmModule._regroove_synth_note_off) {
+                        // console.log(`[${name}] noteOff: note=${note}`);
+                        wasmModule._regroove_synth_note_off(synthPtr, note);
+                    }
+                    // Drums don't need noteOff
+                }
+            };
+
+            // Store instance with unique key for this label
+            const instanceKey = label ? `${name}:${label}` : name;
+            this.loadedSynths.set(instanceKey, synthInstance);
+
+            // Register instance with ID for external access
+            const instanceId = `${name}_${this.synthInstanceCounter++}`;
+            this.synthInstances.set(instanceId, {
+                id: instanceId,
+                name: name,
+                instance: synthInstance,
+                params: this.synthParams.get(name) || new Map(),
+                metadata: synthInfo,
+                label: label  // Set label immediately
+            });
+
+            // Emit event for UI integration
+            window.dispatchEvent(new CustomEvent('rfx:synthLoaded', {
+                detail: { id: instanceId, name: name, label: label }
+            }));
+
+            const loadEnd = performance.now();
+            console.log(`✅ Loaded ${name} (ID: ${instanceId}) in ${(loadEnd - loadStart).toFixed(0)}ms`);
+        } catch (error) {
+            console.error(`❌ Failed to load ${name}:`, error);
+        }
+    }
+
+    // Load script dynamically
+    loadScript(url) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = url;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    // Get list of available synths
+    getSynthList() {
+        return Array.from(this.synths.keys());
+    }
+
+    // Get all parameters currently in use
+    getParams() {
+        return { ...this.params };
+    }
+
+    // Set parameter value
+    setParam(name, value) {
+        this.params[name] = value;
+    }
+
+    // Get parameter info by name for a synth
+    getParameterByName(synthName, paramName) {
+        // Find any instance of this synth (parameter info is the same for all instances)
+        let synthInstance = null;
+        for (const [key, inst] of this.loadedSynths) {
+            if (key === synthName || key.startsWith(`${synthName}:`)) {
+                synthInstance = inst;
+                break;
+            }
+        }
+        if (!synthInstance || !synthInstance.parameterInfo) return null;
+
+        // Normalize parameter name (lowercase, remove spaces/underscores/parens)
+        const normalizedName = paramName.toLowerCase().replace(/[_\s()]/g, '');
+
+        // First try exact match
+        let param = synthInstance.parameterInfo.find(p =>
+            p.name.toLowerCase().replace(/[_\s()]/g, '') === normalizedName
+        );
+
+        // If no exact match, try partial match (contains)
+        if (!param) {
+            param = synthInstance.parameterInfo.find(p =>
+                p.name.toLowerCase().replace(/[_\s()]/g, '').includes(normalizedName)
+            );
+        }
+
+        return param;
+    }
+
+    // Update a parameter across all loaded synths
+    updateParameterAllSynths(paramName, value) {
+        for (const [instanceKey, synthInstance] of this.loadedSynths) {
+            if (!synthInstance.setParameter || !synthInstance.parameterInfo) continue;
+
+            // Extract synth name from key (before the colon if present)
+            const synthName = instanceKey.split(':')[0];
+
+            const paramInfo = this.getParameterByName(synthName, paramName);
+            if (paramInfo) {
+                // Check if this is an integer/enum/boolean parameter
+                const isIntParam = paramInfo.type === 'int' || paramInfo.type === 'boolean' || paramInfo.enum_values;
+
+                let finalValue = value;
+                if (isIntParam) {
+                    // For integer parameters, scale knob value (0-127) to parameter range
+                    if (value > 1) {
+                        // Knob sends 0-127, scale to parameter's min-max range
+                        finalValue = Math.round((value / 127) * (paramInfo.max - paramInfo.min) + paramInfo.min);
+                    } else {
+                        // Already normalized 0-1, scale to parameter range
+                        finalValue = Math.round(value * (paramInfo.max - paramInfo.min) + paramInfo.min);
+                    }
+                } else {
+                    // For normalized parameters, convert 0-127 to 0-1
+                    if (value > 1) {
+                        finalValue = value / 127;
+                    }
+                }
+
+                synthInstance.setParameter(paramInfo.index, finalValue);
+
+                // Emit parameter change event for UI sync
+                window.dispatchEvent(new CustomEvent('rfx:paramChanged', {
+                    detail: { paramName, value: finalValue, source: 'knob' }
+                }));
+
+                // console.log(`[${instanceKey}] Updated ${paramInfo.name} (${paramInfo.index}) = ${finalValue}`);
+            }
+        }
+    }
+
+    // Update a parameter only for synth instances with a specific label or instance ID
+    updateParameterForLabel(label, paramName, value) {
+        // Find synth instances with this label OR instance ID
+        for (const inst of this.synthInstances.values()) {
+            // Match by label (e.g., "r") OR by instance ID (e.g., "rvbass_0")
+            if (inst.label !== label && inst.id !== label) continue;
+
+            const synthInstance = inst.instance;
+            if (!synthInstance.setParameter || !synthInstance.parameterInfo) continue;
+
+            const paramInfo = this.getParameterByName(inst.name, paramName);
+            if (paramInfo) {
+                // Check if this is an integer/enum/boolean parameter
+                const isIntParam = paramInfo.type === 'int' || paramInfo.type === 'boolean' || paramInfo.enum_values;
+
+                let finalValue = value;
+                if (isIntParam) {
+                    // For integer parameters, scale knob value (0-127) to parameter range
+                    if (value > 1) {
+                        // Knob sends 0-127, scale to parameter's min-max range
+                        finalValue = Math.round((value / 127) * (paramInfo.max - paramInfo.min) + paramInfo.min);
+                    } else {
+                        // Already normalized 0-1, scale to parameter range
+                        finalValue = Math.round(value * (paramInfo.max - paramInfo.min) + paramInfo.min);
+                    }
+                } else {
+                    // For normalized parameters, convert 0-127 to 0-1
+                    if (value > 1) {
+                        finalValue = value / 127;
+                    }
+                }
+
+                synthInstance.setParameter(paramInfo.index, finalValue);
+
+                // Emit parameter change event for UI sync
+                window.dispatchEvent(new CustomEvent('rfx:paramChanged', {
+                    detail: { paramName, value: finalValue, source: 'knob' }
+                }));
+
+                // console.log(`[${inst.name}:${label}] Updated ${paramInfo.name} (${paramInfo.index}) = ${finalValue}`);
+            }
+        }
+    }
+
+    // Clear all knobs and parameters
+    clearKnobs() {
+        // Reset params object
+        for (const key of Object.keys(this.params)) {
+            delete this.params[key];
+        }
+
+        // Notify UI to clear knobs
+        window.dispatchEvent(new CustomEvent('rfx:clearknobs'));
+    }
+
+    // Reset clock offset (call this when starting fresh playback)
+    resetClockOffset() {
+        this.clockOffset = undefined;
+        console.log('🔄 Clock offset reset');
+    }
+
+    // Master Effects Control
+    async toggleEffect(effectName, enabled) {
+        // Lazy-load effects processor on first use
+        if (!this.effectsProcessor && enabled) {
+            console.log('🎛️ First effect enabled - initializing effects processor...');
+            await this.initEffectsProcessor();
+
+            if (!this.effectsProcessor) {
+                console.error('⚠️ Failed to initialize effects processor');
+                return;
+            }
+        }
+
+        if (!this.effectsProcessor || !this.effectsProcessorReady) {
+            console.warn('⚠️ Effects processor not available');
+            return;
+        }
+
+        console.log(`🎛️ Toggling ${effectName} → ${enabled ? 'ENABLED' : 'DISABLED'}`);
+
+        this.effectsProcessor.port.postMessage({
+            type: 'toggle',
+            data: { name: effectName, enabled }
+        });
+    }
+
+    setEffectParam(effectName, paramName, value) {
+        if (!this.effectsProcessor || !this.effectsProcessorReady) {
+            console.error('⚠️ Effects processor not ready');
+            return;
+        }
+
+        console.log(`🎛️ ${effectName}:${paramName} = ${value.toFixed(3)}`);
+
+        this.effectsProcessor.port.postMessage({
+            type: 'setParam',
+            data: { effect: effectName, param: paramName, value }
+        });
+    }
+
+    // Get available effects list
+    getAvailableEffects() {
+        return [
+            { name: 'delay', params: ['time', 'feedback', 'mix'] },
+            { name: 'reverb', params: ['size', 'damping', 'mix'] },
+            { name: 'distortion', params: ['drive', 'mix'] },
+            { name: 'filter', params: ['cutoff', 'resonance'] },
+            { name: 'eq', params: ['low', 'mid', 'high'] },
+            { name: 'compressor', params: ['threshold', 'ratio', 'attack', 'release', 'makeup'] },
+            { name: 'limiter', params: ['threshold', 'release', 'ceiling', 'lookahead'] },
+            { name: 'phaser', params: ['rate', 'depth', 'feedback'] },
+            { name: 'stereo_widen', params: ['width', 'mix'] },
+            { name: 'ring_mod', params: ['frequency', 'mix'] },
+            { name: 'pitchshift', params: ['pitch', 'mix'] },
+            { name: 'lofi', params: ['bit_depth', 'sample_rate_ratio', 'filter_cutoff', 'saturation', 'noise_level', 'wow_flutter_depth', 'wow_flutter_rate'] }
+        ];
+    }
+
+    // Stop all scheduled notes (for when playback stops)
+    stopAll() {
+        console.log(`🛑 Canceling ${this.scheduledNotes.size} scheduled notes`);
+
+        // Cancel all scheduled timeouts (future note-ons and note-offs)
+        for (const timeoutId of this.scheduledNotes) {
+            clearTimeout(timeoutId);
+        }
+        this.scheduledNotes.clear();
+
+        // Reset timing reference for next playback
+        this.clockOffset = undefined;
+
+        // Send noteOff to all currently playing notes to stop stuck notes
+        // console.log(`🛑 Sending noteOff to ${this.activeNotes.size} active synth instances`);
+        for (const [instanceKey, noteSet] of this.activeNotes) {
+            const synthInstance = this.loadedSynths.get(instanceKey);
+            if (synthInstance && synthInstance.noteOff) {
+                for (const note of noteSet) {
+                    // console.log(`[${instanceKey}] Emergency noteOff: ${note}`);
+                    synthInstance.noteOff(note);
+                }
+            }
+        }
+        this.activeNotes.clear();
+    }
+
+    // Preload synths used in a pattern (extract synth names from code)
+    async preloadSynths(code) {
+        const synthNames = [];
+        for (const [name] of this.synths) {
+            if (code.includes(`"${name}"`) || code.includes(`'${name}'`)) {
+                synthNames.push(name);
+            }
+        }
+
+        if (synthNames.length > 0) {
+            console.log(`📦 Preloading synths: ${synthNames.join(', ')}`);
+            const preloadStart = performance.now();
+
+            // Load in parallel for speed (create unlabeled instances for preload)
+            const loadPromises = synthNames.map(name => {
+                const synthInfo = this.synths.get(name);
+                // Check if we already have any instance of this synth
+                const hasInstance = Array.from(this.loadedSynths.keys()).some(
+                    key => key === name || key.startsWith(`${name}:`)
+                );
+                if (synthInfo && !hasInstance && !this.loadingSynths.has(name)) {
+                    this.loadingSynths.add(name);
+                    // Load unlabeled instance for preloading
+                    return this.loadWASMSynth(name, synthInfo, 'unlabeled').finally(() => {
+                        this.loadingSynths.delete(name);
+                    });
+                }
+                return Promise.resolve();
+            });
+
+            await Promise.all(loadPromises);
+            const preloadEnd = performance.now();
+            console.log(`✅ All synths preloaded in ${(preloadEnd - preloadStart).toFixed(0)}ms`);
+        }
+    }
+
+    // ==================== PUBLIC API FOR EXTERNAL ACCESS ====================
+
+    // Get all loaded synth instances
+    getLoadedSynths() {
+        return Array.from(this.synthInstances.values()).map(inst => ({
+            id: inst.id,
+            name: inst.name,
+            parameters: this.getParameterInfo(inst.name)
+        }));
+    }
+
+    // Get synth instance by ID
+    getSynthById(instanceId) {
+        return this.synthInstances.get(instanceId);
+    }
+
+    // Get synth instance by name (returns first match)
+    getSynthByName(name) {
+        for (const inst of this.synthInstances.values()) {
+            if (inst.name === name) return inst;
+        }
+        return null;
+    }
+
+    // Get parameter info for a synth
+    getParameterInfo(synthName) {
+        // Get from SynthRegistry descriptor
+        const descriptor = window.SynthRegistry?.get?.(synthName);
+        if (descriptor?.getParameterInfo) {
+            const params = typeof descriptor.getParameterInfo === 'function'
+                ? descriptor.getParameterInfo()
+                : descriptor.getParameterInfo;
+            if (params && params.length > 0) return params;
+        }
+
+        // Fallback to synth instance (find any instance of this synth)
+        let synthInstance = null;
+        for (const [key, inst] of this.loadedSynths) {
+            if (key === synthName || key.startsWith(`${synthName}:`)) {
+                synthInstance = inst;
+                break;
+            }
+        }
+        if (synthInstance?.getParameterInfo) {
+            return synthInstance.getParameterInfo();
+        }
+        return [];
+    }
+
+    // Set parameter value for a synth (updates first instance or all instances)
+    setSynthParameter(synthName, paramIndex, value) {
+        // Find the first instance of this synth
+        let synthInstance = null;
+        let instanceKey = null;
+        for (const [key, inst] of this.loadedSynths) {
+            if (key === synthName || key.startsWith(`${synthName}:`)) {
+                synthInstance = inst;
+                instanceKey = key;
+                break;
+            }
+        }
+        if (synthInstance?.setParameter) {
+            synthInstance.setParameter(paramIndex, value);
+            console.log(`🎛️ ${instanceKey} param ${paramIndex} = ${value}`);
+            return true;
+        }
+        return false;
+    }
+
+    // Get current parameter values for a synth
+    getSynthParameters(synthName) {
+        return this.synthParams.get(synthName) || new Map();
+    }
+
+    // Trigger note programmatically
+    triggerNote(synthName, note, velocity = 127, duration = 500) {
+        // Find the first instance of this synth
+        let synthInstance = null;
+        for (const [key, inst] of this.loadedSynths) {
+            if (key === synthName || key.startsWith(`${synthName}:`)) {
+                synthInstance = inst;
+                break;
+            }
+        }
+
+        if (!synthInstance) {
+            console.warn(`Synth ${synthName} not loaded`);
+            return false;
+        }
+
+        synthInstance.noteOn(note, velocity / 127);
+        setTimeout(() => {
+            synthInstance.noteOff(note);
+        }, duration);
+        return true;
+    }
+
+    // Clear all loaded synths (without page reload)
+    clearAllSynths() {
+        console.log('🧹 Clearing all synths...');
+
+        // Stop playback first
+        this.stopAll();
+
+        // Clear all synth instances
+        this.loadedSynths.clear();
+        this.synthInstances.clear();
+        this.loadingSynths.clear();
+        this.synthInstanceCounter = 0;
+
+        // Emit event for UI update
+        window.dispatchEvent(new CustomEvent('rfx:synthsCleared'));
+
+        console.log('✅ All synths cleared');
+    }
+}
+
+// Create global instance
+export const rfx = new RFXIntegration();
+
+// Global helper to add parameters to haps
+// Usage in Strudel: note("c4").s("rgahx").fmap(rfxparam("waveform", 2))
+window.rfxparam = (name, value) => {
+    return (hap) => ({
+        ...hap,
+        [`param_${name}`]: value
+    });
+};
+
+// Global helper to add MULTIPLE parameters to haps (cleaner syntax)
+// Usage: note("c4").s("rgahx").fmap(rfxparams({waveform: 1, filterlower: 10, filterupper: 50}))
+window.rfxparams = (params) => {
+    return (hap) => {
+        const paramProps = {};
+        for (const [name, value] of Object.entries(params)) {
+            paramProps[`param_${name}`] = value;
+        }
+        return {...hap, ...paramProps};
+    };
+};
+
+// Global helper to set INIT parameters (set once when pattern starts, not per-note)
+// Usage: note("c4 e4 g4").s("rgahx").fmap(rfxinit({waveform: 1, filterlower: 10, filterupper: 50}))
+// These parameters are sent ONCE and won't overwrite UI changes on subsequent notes
+window.rfxinit = (params) => {
+    return (hap) => ({
+        ...hap,
+        _rfx_init_params: params
+    });
+};
+
+// Alternative: set global parameter values
+// Usage: rfx.setGlobalParam("filter_cutoff", 0.8)
+window.rfx = rfx;

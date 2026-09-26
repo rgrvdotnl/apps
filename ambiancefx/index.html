@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="AmbianceFX - syntesized soundscape; rain, thunder, birds, crickets, ...">
+    <meta name="theme-color" content="#0F93F8">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AmbianceFX">
+    <title>AmbianceFX</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512x512.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="icon-192x192.png">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- The topbar, in HTML. The native builds draw this bar inside the window
+         (draw_banner in src/main.cpp); in a page it belongs to the page, where
+         it is there before the module has loaded and costs the canvas no rows
+         of its own. Same arrangement as tools/hakkuh and tools/firetracker.
+
+         There is no menu in it, and no button of any kind: there is one view.
+         The two views this page used to switch between (Main and Settings) are
+         gone with the panels they belonged to, along with the
+         _ambiancefx_set_view call that switched them. -->
+    <div class="top-banner">
+        <div class="banner-title">AmbianceFX</div>
+        <!-- Which build this is, from the stamp the wasm build bakes in
+             (AMBIANCEFX_BUILD in CMakeLists.txt -- the same string the native
+             builds print at startup). It is here rather than nowhere because an
+             engine change was once measured as correct and reported as
+             inaudible when the service worker was handing back the previous wasm
+             from its cache, and nothing on screen said which engine was playing.
+             The service worker is network-first for the engine now and names its
+             cache after the build; this is the third lock on the same door. -->
+        <div class="banner-build">aaaefe7 2026-09-26 12:42Z</div>
+    </div>
+
+    <!-- Content area with canvas -->
+    <div class="content">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+    </div>
+
+    <script type='text/javascript'>
+        // ---------------------------------------------------------------
+        // The module
+        // ---------------------------------------------------------------
+
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            setStatus: function(text) {},
+            monitorRunDependencies: function(left) {},
+            onRuntimeInitialized: function() {}
+        };
+
+        // Browsers start the AudioContext suspended; it must be resumed from a
+        // user gesture before any sound plays. Keep (re)attempting on every
+        // interaction until it is actually running.
+        function resumeAudio() {
+            var ctx = null;
+            if (typeof SDL3 !== 'undefined' && SDL3.audioContext) {
+                ctx = SDL3.audioContext;
+            } else if (typeof SDL !== 'undefined' && SDL.audioContext) {
+                ctx = SDL.audioContext;
+            } else if (typeof Module !== 'undefined' && Module.SDL3 && Module.SDL3.audioContext) {
+                ctx = Module.SDL3.audioContext;
+            }
+            if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
+                ctx.resume();
+            }
+        }
+        document.addEventListener('pointerdown', resumeAudio);
+        document.addEventListener('keydown', resumeAudio);
+
+        // Handle WebGL context loss and restoration
+        var canvas = document.getElementById('canvas');
+        canvas.addEventListener('webglcontextlost', function(e) {
+            console.error('WebGL context lost! Preventing default and attempting restore...');
+            e.preventDefault();
+        }, false);
+
+        canvas.addEventListener('webglcontextrestored', function() {
+            console.log('WebGL context restored! Calling C++ to reinitialize...');
+            if (Module._wasm_restore_gl_context) {
+                try {
+                    Module._wasm_restore_gl_context();
+                    console.log('GL context reinitialized successfully');
+                } catch(e) {
+                    console.error('Error during GL context restoration:', e);
+                }
+            } else {
+                console.error('wasm_restore_gl_context function not found');
+            }
+        }, false);
+    </script>
+    <script async type="text/javascript" src="ambiancefx.js"></script>
+    <script>
+        // Register service worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./service-worker.js').then(function(registration) {
+                console.log('ServiceWorker registered with scope:', registration.scope);
+            }).catch(function(err) {
+                console.log('ServiceWorker registration failed:', err);
+            });
+        }
+    </script>
+</body>
+</html>

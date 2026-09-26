@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Web-based audio effects processor">
+    <meta name="theme-color" content="#CF1A37">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Regroove Player">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/svg+xml" href="../replugged/favicon.svg">
+    <link rel="icon" type="image/png" sizes="96x96" href="../replugged/favicon-96x96.png">
+    <link rel="apple-touch-icon" href="../replugged/apple-touch-icon.png">
+    <title>RegrooveFX Player</title>
+    <link rel="stylesheet" href="../replugged/style.css">
+</head>
+<body>
+    <div class="top-banner">
+        <button class="hamburger-button" id="hamburgerBtn">☰</button>
+        <div class="banner-title">RegrooveFX Player</div>
+    </div>
+
+    <!-- Hamburger Menu -->
+    <div class="menu-overlay" id="menuOverlay"></div>
+    <div class="menu-panel" id="menuPanel">
+        <button class="menu-close" id="menuClose">×</button>
+        <div class="menu-items">
+            <!-- Audio Device Settings -->
+            <div style="padding: 15px 0; border-bottom: 1px solid var(--border); margin-bottom: 10px;">
+                <label style="display: block; color: var(--text-secondary); font-size: 0.8em; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Audio Output</label>
+                <select id="outputDeviceList" class="menu-item" style="padding: 10px 15px; margin-bottom: 12px;">
+                    <option value="">Default Output</option>
+                </select>
+
+                <label style="display: block; color: var(--text-secondary); font-size: 0.8em; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Audio Input</label>
+
+                <label style="display: flex; align-items: center; gap: 10px; padding: 10px 15px; cursor: pointer; user-select: none; color: var(--text-secondary); font-size: 0.85em;">
+                    <input type="checkbox" id="echoCancellationCheckbox" style="margin: 0; width: 16px; height: 16px; cursor: pointer;">
+                    <span>Echo Cancellation</span>
+                </label>
+
+                <label style="display: flex; align-items: center; gap: 10px; padding: 10px 15px; cursor: pointer; user-select: none; color: var(--text-secondary); font-size: 0.85em;">
+                    <input type="checkbox" id="noiseSuppressionCheckbox" style="margin: 0; width: 16px; height: 16px; cursor: pointer;">
+                    <span>Noise Suppression</span>
+                </label>
+
+                <label style="display: flex; align-items: center; gap: 10px; padding: 10px 15px; cursor: pointer; user-select: none; color: var(--text-secondary); font-size: 0.85em;">
+                    <input type="checkbox" id="autoGainControlCheckbox" style="margin: 0; width: 16px; height: 16px; cursor: pointer;">
+                    <span>Auto Gain Control</span>
+                </label>
+            </div>
+
+            <!-- Debug Log -->
+            <div style="padding: 15px 0; border-bottom: 1px solid var(--border); margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <label style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px;">Debug Log</label>
+                    <button id="clearLog" style="padding: 5px 10px; font-size: 0.7em; background: #1a1a1a; border: 1px solid #2a2a2a; color: #aaa; cursor: pointer; border-radius: 3px;">Clear</button>
+                </div>
+                <div id="debugLog" style="padding: 10px; background: #0a0a0a; border: 1px solid #333; border-radius: 4px; font-family: monospace; font-size: 10px; max-height: 200px; overflow-y: auto; color: #aaa;">
+                    <div style="color: #555;">No log messages</div>
+                </div>
+            </div>
+
+            <button class="menu-item" id="showCreditsBtn">About / Credits</button>
+        </div>
+    </div>
+
+    <!-- Credits Modal -->
+    <div class="modal-overlay" id="creditsOverlay"></div>
+    <div class="modal" id="creditsModal">
+        <div class="modal-header">
+            <h2>About RegrooveFX Player</h2>
+            <button class="modal-close" id="creditsClose">×</button>
+        </div>
+        <div class="modal-body">
+            <p>Web-based audio effects processor</p>
+            <p>MOD/MED/AHX/SID playback support</p>
+            <p>Real-time audio visualization</p>
+            <p>
+                Uses: RFX (RegrooveFX + Deck Player), WebAssembly, Web Audio API
+            </p>
+            <p style="margin-top: 20px; font-size: 0.9em; color: #999;">
+                Created by Gerard Braad &lt;me@gbraad.nl&gt;
+            </p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 15px; margin-bottom: 20px;">
+            <!-- Audio Source Section -->
+            <div class="control-section" style="margin-bottom: 0;">
+                <div class="section-title">Audio Source</div>
+
+                <div class="controls-grid">
+                    <div class="file-input">
+                        <button>📁 Load File(s)</button>
+                        <input type="file" id="audioFile" accept="*" multiple>
+                    </div>
+
+                    <button id="micBtn">🎤 Input/Mic</button>
+                    <button id="playBtn" disabled>▶ Play</button>
+                    <button id="stopBtn" disabled>◼ Stop</button>
+
+                    <select id="testSignal">
+                        <option value="">Test Signal</option>
+                        <option value="sine">Sine 440Hz</option>
+                        <option value="noise">White Noise</option>
+                        <option value="sweep">Frequency Sweep</option>
+                    </select>
+
+                    <button id="renderBtn" style="display: none;">💾 Render to WAV</button>
+                </div>
+
+                <div id="audioSourceInfo" class="device-selector" style="display: none;">
+                    <!-- Shows mic selector OR file name (mutually exclusive) -->
+                    <select id="micDeviceList" style="display: none;">
+                        <option value="">Select Microphone...</option>
+                    </select>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: nowrap;">
+                        <div id="currentFileName" style="display: none; color: var(--text-primary); font-size: 0.85em; padding: 10px 15px; background: var(--bg-tertiary); border: 1px solid var(--border); letter-spacing: 1px; font-family: Arial, sans-serif; box-sizing: border-box; min-height: 38px; flex: 1; min-width: 0; overflow: hidden;">
+                            <span style="color: var(--text-secondary); text-transform: uppercase;">Playing:</span> <span id="fileNameText" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 100%; vertical-align: bottom;"></span>
+                        </div>
+                        <div id="playlistNavButtons" style="display: none; gap: 5px; align-items: center; flex-shrink: 0;">
+                            <button id="btnPrevTrackTop" title="Previous Track">◄ Prev</button>
+                            <button id="btnNextTrackTop" title="Next Track">Next ►</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="playbackProgress" style="visibility: hidden; cursor: pointer; margin-top: 10px; height: 26px;" title="Click to seek">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75em; color: var(--text-secondary); margin-bottom: 3px;">
+                        <span id="currentTime">0:00</span>
+                        <span id="totalTime">0:00</span>
+                    </div>
+                    <div style="background: var(--bg-tertiary); height: 8px; border: 1px solid var(--border); position: relative; border-radius: 2px;">
+                        <div id="progressBar" style="background: #CF1A37; height: 100%; width: 0%; transition: width 0.1s; pointer-events: none; border-radius: 2px;"></div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <div class="visualizer-container" style="flex: 2.5; height: 200px;">
+                        <canvas id="visualizer"></canvas>
+                    </div>
+                    <div class="visualizer-container" style="flex: 2.5; height: 200px;">
+                        <canvas id="spectrum"></canvas>
+                    </div>
+                    <div class="visualizer-container" style="flex: 1.0; height: 200px;">
+                        <canvas id="vumeter"></canvas>
+                        <canvas id="freq-viz-player" style="display: none;"></canvas>
+                        <button id="toggleVuFreq" class="viz-toggle-btn" title="Toggle VU / Freq Bars">VU ⇄ FREQ</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Playback Section -->
+            <div class="control-section" style="margin-bottom: 0;">
+                <div class="section-title">Playback</div>
+
+                <div style="display: flex; gap: 12px; justify-content: center; padding-top: 10px;">
+                    <!-- Tempo Fader -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Tempo</div>
+                        <svg-slider id="tempoFader" value="64" min="0" max="127" width="45" color="#CF1A37" style="height: 280px;"></svg-slider>
+                        <div id="tempoValue" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">0.0%</div>
+                    </div>
+
+                    <!-- Volume Fader -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Vol</div>
+                        <svg-slider id="gainFader" value="127" min="0" max="127" width="45" color="#CF1A37" style="height: 280px;"></svg-slider>
+                        <div id="gainValue" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">100%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Playlist Section (shown when multiple files loaded) -->
+        <div id="playlistSection" class="control-section" style="display: none;">
+            <div class="section-title" style="cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between;" id="playlistSectionTitle">
+                <span>Playlist (<span id="totalTracks">0</span> tracks)</span>
+                <span id="playlistToggle" style="font-size: 0.8em; transition: transform 0.3s;">▼</span>
+            </div>
+
+            <div id="playlistContent" style="overflow: hidden; transition: max-height 0.3s ease-out;">
+                <!-- Track list -->
+                <div id="playlistTrackList" style="margin-top: 15px; max-height: 300px; overflow-y: auto; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; padding: 10px;">
+                    <!-- Tracks will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- MOD/MED Player Controls -->
+        <div id="modmedControls" class="control-section" style="display: none;">
+            <div class="section-title">MOD/MED Player</div>
+
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center; justify-content: center;">
+                <!-- File info -->
+                <div id="modmedFileInfo" style="flex: 1 0 100%; text-align: center; color: var(--text-secondary); font-size: 0.85em; margin-bottom: 10px;">
+                    <span id="modmedTypeName" style="color: #0066FF;">No file loaded</span>
+                </div>
+
+                <!-- Position display -->
+                <div style="flex: 0 0 auto; display: flex; gap: 10px; font-family: monospace; font-size: 0.9em;">
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">ORDER</span>
+                        <span id="modmedOrderPos" style="color: var(--text-primary); font-weight: bold; min-width: 2ch;">00</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">LENGTH</span>
+                        <span id="modmedSongLength" style="color: var(--text-primary); font-weight: bold; min-width: 2ch;">--</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">ROW</span>
+                        <span id="modmedRowPos" style="color: var(--text-primary); font-weight: bold; min-width: 3ch;">000</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">BPM</span>
+                        <span id="modmedBpm" style="color: var(--text-primary); font-weight: bold; min-width: 3ch;">125</span>
+                    </div>
+                </div>
+
+                <!-- Pattern navigation -->
+                <div style="flex: 0 0 auto; display: flex; gap: 6px; align-items: center;">
+                    <button id="modmedPrevPattern" class="modmed-button" title="Previous Pattern">◄</button>
+                    <button id="modmedNextPattern" class="modmed-button" title="Next Pattern">►</button>
+                    <button id="modmedLoopPattern" class="modmed-loop-button" title="Loop Current Pattern">⟲</button>
+                </div>
+
+                <!-- Channel mute buttons (will be populated dynamically based on file channels) -->
+                <div id="modmedChannelMutes" style="display: flex; gap: 6px; align-items: center;">
+                    <!-- Buttons added dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <div class="control-section" id="model1Section">
+            <div class="section-title">
+                <span>MODEL 1 Input Processing</span>
+                <button class="fullscreen-btn" id="btnModel1Fullscreen">⛶</button>
+            </div>
+            <div id="model1-effects" class="effects-grid"></div>
+        </div>
+
+        <div class="control-section" id="essentialEffectsSection">
+            <div class="section-title">
+                <span>Essential Effects</span>
+                <button class="fullscreen-btn" id="btnEssentialFullscreen">⛶</button>
+            </div>
+            <div id="essential-effects" class="effects-grid"></div>
+        </div>
+
+        <div class="control-section" id="additionalEffectsSection">
+            <div class="section-title">
+                <span>Additional Effects</span>
+                <button class="fullscreen-btn" id="btnAdditionalFullscreen">⛶</button>
+            </div>
+            <div id="additional-effects" class="effects-grid"></div>
+        </div>
+
+        <div class="control-section" id="specialEffectsSection">
+            <div class="section-title">
+                <span>Special Effects</span>
+                <button class="fullscreen-btn" id="btnSpecialFullscreen">⛶</button>
+            </div>
+            <div id="special-effects" class="effects-grid"></div>
+        </div>
+    </div>
+
+    <!-- Custom UI components from Revision -->
+    <script type="module" src="../replugged/components/svg-slider.js"></script>
+    <script type="module" src="../replugged/components/pad-knob.js"></script>
+    <script type="module" src="../replugged/components/fader-components.js"></script>
+
+    <!-- Extracted visualization components -->
+    <script src="../replugged/components/vu-meter.js"></script>
+    <script src="../replugged/components/waveform-display.js"></script>
+    <script src="../replugged/components/spectrum-analyzer.js"></script>
+    <script src="../replugged/components/freq-bars-analyzer.js"></script>
+
+    <script src="../replugged/player.js" type="module"></script>
+
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => {
+                        console.log('Service Worker registered');
+
+                        // Check for updates periodically (not on every load to avoid loops)
+                        // Uncomment if needed: reg.update();
+
+                        // Notify when new service worker is available (don't auto-reload)
+                        reg.addEventListener('updatefound', () => {
+                            const newWorker = reg.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                                    console.log('✅ New service worker activated (refresh manually to update)');
+                                    // Don't auto-reload to avoid infinite loops
+                                }
+                            });
+                        });
+                    })
+                    .catch(err => console.warn('Service Worker registration failed:', err));
+
+                // Listen for service worker updates
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    console.log('Service worker updated');
+                });
+            });
+        }
+    </script>
+
+    <!-- Fullscreen Scope Functionality -->
+    <script>
+        // Track popup windows for each visualizer
+        const popupWindows = new Map();
+        window.popupWindows = popupWindows; // Expose globally for player.js
+        let videoPopupWindow = null;
+
+        // Pop-out video to separate window
+        function popOutVideo(videoElement) {
+            if (!videoElement) {
+                console.error('[PopOut] No video element provided');
+                return;
+            }
+
+            // Don't open duplicate video popups
+            if (videoPopupWindow && !videoPopupWindow.closed) {
+                videoPopupWindow.focus();
+                return;
+            }
+
+            const popup = window.open('', 'video_popup', 'width=1280,height=720,resizable=yes,scrollbars=no,location=no,menubar=no,status=no,toolbar=no');
+            if (!popup) {
+                alert('Pop-up blocked! Please allow pop-ups for this site.');
+                return;
+            }
+
+            popup.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Video Player - Regroove</title>
+                    <style>
+                        body {
+                            margin: 0;
+                            background: #0a0a0a;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            overflow: hidden;
+                        }
+                        video {
+                            max-width: 100%;
+                            max-height: 100vh;
+                            display: block;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <video id="video_popup" controls autoplay></video>
+                </body>
+                </html>
+            `);
+            popup.document.close();
+
+            const popupVideo = popup.document.getElementById('video_popup');
+
+            // Sync video source and current time
+            popupVideo.src = videoElement.src;
+            popupVideo.currentTime = videoElement.currentTime;
+
+            // Sync playback state
+            if (!videoElement.paused) {
+                popupVideo.play();
+            }
+
+            videoPopupWindow = popup;
+            console.log('[PopOut] Opened video in new window');
+
+            // Handle popup close
+            popup.addEventListener('beforeunload', () => {
+                videoPopupWindow = null;
+                console.log('[PopOut] Closed video popup');
+            });
+
+            // Sync playback between main and popup
+            const syncToPopup = () => {
+                if (!popup.closed && popupVideo) {
+                    popupVideo.currentTime = videoElement.currentTime;
+                    if (videoElement.paused && !popupVideo.paused) {
+                        popupVideo.pause();
+                    } else if (!videoElement.paused && popupVideo.paused) {
+                        popupVideo.play();
+                    }
+                }
+            };
+
+            const syncFromPopup = () => {
+                if (!popup.closed && popupVideo) {
+                    videoElement.currentTime = popupVideo.currentTime;
+                    if (popupVideo.paused && !videoElement.paused) {
+                        videoElement.pause();
+                    } else if (!popupVideo.paused && videoElement.paused) {
+                        videoElement.play();
+                    }
+                }
+            };
+
+            // Sync every second
+            const syncInterval = setInterval(() => {
+                if (popup.closed) {
+                    clearInterval(syncInterval);
+                    return;
+                }
+                syncToPopup();
+            }, 1000);
+
+            // Sync on popup events
+            popupVideo.addEventListener('play', syncFromPopup);
+            popupVideo.addEventListener('pause', syncFromPopup);
+            popupVideo.addEventListener('seeked', syncFromPopup);
+        }
+
+        // Expose globally
+        window.popOutVideo = popOutVideo;
+
+        // Pop-out visualizer to separate window
+        function popOutVisualizer(container) {
+            // Get the currently visible canvas (not just the first one)
+            const canvases = container.querySelectorAll('canvas');
+            let canvas = null;
+            for (const c of canvases) {
+                if (c.style.display !== 'none') {
+                    canvas = c;
+                    break;
+                }
+            }
+
+            if (!canvas) {
+                // Fallback to first canvas if none are explicitly visible
+                canvas = container.querySelector('canvas');
+            }
+
+            if (!canvas) return;
+
+            const canvasId = canvas.id;
+
+            // Don't open duplicate popups
+            if (popupWindows.has(canvasId)) {
+                popupWindows.get(canvasId).focus();
+                return;
+            }
+
+            const popup = window.open('', `scope_${canvasId}`, 'width=800,height=600,resizable=yes,scrollbars=no,location=no,menubar=no,status=no,toolbar=no');
+            if (!popup) {
+                alert('Pop-up blocked! Please allow pop-ups for this site.');
+                return;
+            }
+
+            popup.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>${canvasId.toUpperCase()} - Regroove Scope</title>
+                    <style>
+                        body {
+                            margin: 0;
+                            background: #0a0a0a;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            overflow: hidden;
+                        }
+                        canvas {
+                            width: 100%;
+                            height: 100vh;
+                            display: block;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <canvas id="${canvasId}_popup"></canvas>
+                </body>
+                </html>
+            `);
+            popup.document.close();
+
+            const popupCanvas = popup.document.getElementById(`${canvasId}_popup`);
+            popupCanvas.width = 800;
+            popupCanvas.height = 600;
+
+            // Store reference to popup and its canvas
+            popupWindows.set(canvasId, { window: popup, canvas: popupCanvas });
+            console.log(`[PopOut] Opened ${canvasId} in new window`);
+
+            // Handle popup close
+            popup.addEventListener('beforeunload', () => {
+                popupWindows.delete(canvasId);
+                console.log(`[PopOut] Closed ${canvasId} popup`);
+            });
+
+            // Resize popup canvas when window resizes
+            popup.addEventListener('resize', () => {
+                popupCanvas.width = popup.innerWidth;
+                popupCanvas.height = popup.innerHeight;
+            });
+        }
+
+        // Enable fullscreen and pop-out for all visualizer containers
+        function setupFullscreen() {
+            const containers = document.querySelectorAll('.visualizer-container');
+            console.log('[Fullscreen Setup] Found', containers.length, 'visualizer containers');
+
+            containers.forEach((container, idx) => {
+                // Check if buttons already exist
+                if (container.querySelector('.viz-popout-btn')) {
+                    console.log(`[Fullscreen Setup] Container ${idx} already has buttons, skipping`);
+                    return;
+                }
+
+                // Add pop-out button
+                const popoutBtn = document.createElement('button');
+                popoutBtn.className = 'viz-popout-btn';
+                popoutBtn.textContent = '⧉';
+                popoutBtn.title = 'Pop out (PIP mode)';
+                popoutBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    popOutVisualizer(container);
+                });
+                container.appendChild(popoutBtn);
+                console.log(`[Fullscreen Setup] Added ⧉ button to container ${idx}`);
+
+                // Add fullscreen button
+                const fullscreenBtn = document.createElement('button');
+                fullscreenBtn.className = 'viz-fullscreen-btn';
+                fullscreenBtn.textContent = '⛶';
+                fullscreenBtn.title = 'Fullscreen';
+                fullscreenBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (document.fullscreenElement === container) {
+                        document.exitFullscreen();
+                    } else {
+                        if (container.requestFullscreen) {
+                            container.requestFullscreen();
+                        } else if (container.webkitRequestFullscreen) {
+                            container.webkitRequestFullscreen();
+                        } else if (container.msRequestFullscreen) {
+                            container.msRequestFullscreen();
+                        }
+                    }
+                });
+                container.appendChild(fullscreenBtn);
+                console.log(`[Fullscreen Setup] Added ⛶ button to container ${idx}`);
+
+                // Allow clicking canvas for fullscreen (legacy behavior)
+                container.addEventListener('click', (e) => {
+                    if (e.target === container || e.target.tagName === 'CANVAS') {
+                        if (document.fullscreenElement === container) {
+                            document.exitFullscreen();
+                        } else {
+                            if (container.requestFullscreen) {
+                                container.requestFullscreen();
+                            }
+                        }
+                    }
+                });
+
+                console.log(`[Fullscreen Setup] Fully configured container ${idx}`);
+            });
+
+            console.log('[Fullscreen Setup] All containers configured');
+
+            // Handle resize when entering/exiting fullscreen
+            let previousFullscreenElement = null;
+
+            document.addEventListener('fullscreenchange', () => {
+                // Resize canvas when ENTERING fullscreen
+                if (document.fullscreenElement) {
+                    previousFullscreenElement = document.fullscreenElement;
+                    const canvas = document.fullscreenElement.querySelector('canvas');
+                    if (canvas) {
+                        setTimeout(() => {
+                            canvas.width = canvas.offsetWidth;
+                            canvas.height = canvas.offsetHeight;
+                        }, 100);
+                    }
+
+                    // Add fullscreen-knob class to all knobs for enhanced touch sizing
+                    const knobs = document.fullscreenElement.querySelectorAll('pad-knob');
+                    knobs.forEach(knob => knob.classList.add('fullscreen-knob'));
+                }
+                // Resize canvas when EXITING fullscreen
+                else if (previousFullscreenElement) {
+                    const canvas = previousFullscreenElement.querySelector('canvas');
+                    if (canvas) {
+                        setTimeout(() => {
+                            canvas.width = canvas.offsetWidth;
+                            canvas.height = canvas.offsetHeight;
+                        }, 100);
+                    }
+
+                    // Remove fullscreen-knob class from all knobs
+                    const knobs = previousFullscreenElement.querySelectorAll('pad-knob');
+                    knobs.forEach(knob => knob.classList.remove('fullscreen-knob'));
+
+                    previousFullscreenElement = null;
+                }
+            });
+        }
+
+        // Expose globally
+        window.setupFullscreen = setupFullscreen;
+
+        // Run after effects.js loads
+        if (document.readyState === 'loading') {
+            console.log('[Fullscreen Setup] Waiting for DOMContentLoaded...');
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('[Fullscreen Setup] DOMContentLoaded fired, running setupFullscreen');
+                setupFullscreen();
+            });
+        } else {
+            console.log('[Fullscreen Setup] DOM already loaded, running setupFullscreen immediately');
+            setupFullscreen();
+        }
+
+        // Also try after a delay to ensure canvases are created
+        console.log('[Fullscreen Setup] Will retry after 1 second...');
+        setTimeout(() => {
+            console.log('[Fullscreen Setup] 1 second delay complete, running setupFullscreen again');
+            setupFullscreen();
+        }, 1000);
+    </script>
+
+    <!-- Hamburger Menu Handler -->
+    <script>
+        (function() {
+            const hamburgerBtn = document.getElementById('hamburgerBtn');
+            const menuOverlay = document.getElementById('menuOverlay');
+            const menuPanel = document.getElementById('menuPanel');
+            const menuClose = document.getElementById('menuClose');
+            const showCreditsBtn = document.getElementById('showCreditsBtn');
+            const creditsOverlay = document.getElementById('creditsOverlay');
+            const creditsModal = document.getElementById('creditsModal');
+            const creditsClose = document.getElementById('creditsClose');
+
+            function toggleMenu() {
+                menuOverlay.classList.toggle('active');
+                menuPanel.classList.toggle('active');
+
+                // Re-enumerate devices when opening menu to get fresh device labels
+                if (menuPanel.classList.contains('active') && window.player) {
+                    window.player.enumerateDevices();
+                }
+            }
+
+            function closeMenu() {
+                menuOverlay.classList.remove('active');
+                menuPanel.classList.remove('active');
+            }
+
+            function showCredits() {
+                creditsOverlay.classList.add('active');
+                creditsModal.classList.add('active');
+                closeMenu();
+            }
+
+            function closeCredits() {
+                creditsOverlay.classList.remove('active');
+                creditsModal.classList.remove('active');
+            }
+
+            if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleMenu);
+            if (menuClose) menuClose.addEventListener('click', closeMenu);
+            if (menuOverlay) menuOverlay.addEventListener('click', closeMenu);
+            if (showCreditsBtn) showCreditsBtn.addEventListener('click', showCredits);
+            if (creditsClose) creditsClose.addEventListener('click', closeCredits);
+            if (creditsOverlay) creditsOverlay.addEventListener('click', closeCredits);
+
+            // Audio processing checkbox handlers
+            const audioProcessingCheckboxes = [
+                { id: 'echoCancellationCheckbox', name: 'Echo cancellation' },
+                { id: 'noiseSuppressionCheckbox', name: 'Noise suppression' },
+                { id: 'autoGainControlCheckbox', name: 'Auto gain control' }
+            ];
+
+            audioProcessingCheckboxes.forEach(({id, name}) => {
+                const checkbox = document.getElementById(id);
+                if (checkbox) {
+                    checkbox.addEventListener('change', async function() {
+                        // If microphone is currently active, restart it with new settings
+                        if (window.player && window.player.micStream) {
+                            console.log(`${name} ${this.checked ? 'enabled' : 'disabled'}, restarting microphone...`);
+                            await window.player.stopMicrophone();
+                            await window.player.startMicrophone();
+                        } else {
+                            console.log(`${name} ${this.checked ? 'enabled' : 'disabled'} (will apply on next mic start)`);
+                        }
+                    });
+                }
+            });
+
+            // Debug log functionality
+            const debugLog = document.getElementById('debugLog');
+            const clearLogBtn = document.getElementById('clearLog');
+
+            function addToLog(message, type = 'info') {
+                if (!debugLog) return;
+
+                // Show the log if it was empty
+                const emptyMessage = debugLog.querySelector('div[style*="color: #555"]');
+                if (emptyMessage) {
+                    debugLog.innerHTML = '';
+                }
+
+                const timestamp = new Date().toLocaleTimeString();
+                const color = {
+                    'log': '#aaa',
+                    'info': '#0099ff',
+                    'warn': '#ffaa00',
+                    'error': '#ff4444',
+                    'success': '#00ff00'
+                }[type] || '#aaa';
+
+                const line = document.createElement('div');
+                line.style.color = color;
+                line.textContent = `[${timestamp}] ${message}`;
+                debugLog.appendChild(line);
+
+                debugLog.scrollTop = debugLog.scrollHeight;
+
+                // Limit to 100 lines
+                while (debugLog.children.length > 100) {
+                    debugLog.removeChild(debugLog.firstChild);
+                }
+            }
+
+            function clearLog() {
+                if (debugLog) {
+                    debugLog.innerHTML = '<div style="color: #555;">No log messages</div>';
+                }
+            }
+
+            if (clearLogBtn) {
+                clearLogBtn.addEventListener('click', clearLog);
+            }
+
+            // Intercept console methods
+            const originalLog = console.log;
+            const originalWarn = console.warn;
+            const originalError = console.error;
+            const originalInfo = console.info;
+
+            console.log = function(...args) {
+                originalLog.apply(console, args);
+                addToLog(args.join(' '), 'log');
+            };
+
+            console.warn = function(...args) {
+                originalWarn.apply(console, args);
+                addToLog(args.join(' '), 'warn');
+            };
+
+            console.error = function(...args) {
+                originalError.apply(console, args);
+                addToLog(args.join(' '), 'error');
+            };
+
+            console.info = function(...args) {
+                originalInfo.apply(console, args);
+                addToLog(args.join(' '), 'info');
+            };
+        })();
+    </script>
+</body>
+</html>

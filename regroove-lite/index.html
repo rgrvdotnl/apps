@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Tracker module player and live performance tool">
+    <meta name="theme-color" content="#CF1A37">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Regroove Tracker Groovebox">
+    <title>Regroove Tracker Groovebox</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="96x96" href="favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512x512.png">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="top-banner">
+        <button class="hamburger-button" id="hamburgerBtn">☰</button>
+        <div class="banner-title">Regroove Tracker Groovebox</div>
+    </div>
+
+    <!-- Hamburger Menu -->
+    <div class="menu-overlay" id="menuOverlay"></div>
+    <div class="menu-panel" id="menuPanel">
+        <button class="menu-close" id="menuClose">×</button>
+        <div class="menu-items">
+            <button class="menu-item" id="loadModuleBtn">📁 Load module</button>
+
+            <!-- Audio Device Selectors -->
+            <div style="padding: 15px 0; border-top: 1px solid var(--border); margin-top: 10px;">
+                <label style="display: block; color: var(--text-secondary); font-size: 0.8em; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Audio Output</label>
+                <select id="outputDeviceList" class="menu-item" style="padding: 10px 15px; margin-bottom: 0;">
+                    <option value="">Default Output</option>
+                </select>
+            </div>
+
+            <div style="border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px;">
+                <button class="menu-item" id="creditsBtn">About / Credits</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credits Modal -->
+    <div class="modal-overlay" id="creditsOverlay"></div>
+    <div class="modal" id="creditsModal">
+        <div class="modal-header">
+            <h2>About Regroove Tracker Groovebox</h2>
+            <button class="modal-close" id="creditsClose">×</button>
+        </div>
+        <div class="modal-body">
+            <p>Tracker module player and live performance tool</p>
+            <p>
+		Uses: libopenmpt, SDL3, ImGui, RtMidi, RegrooveFX, webassembly, ...
+            </p>
+            <p style="margin-top: 20px; font-size: 0.9em; color: #999;">
+                Created by Gerard Braad &lt;me@gbraad.nl&gt;
+            </p>
+        </div>
+    </div>
+
+    <!-- Content area with canvas -->
+    <div class="content">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+        <input type="file" id="fileInput" accept=".mod,.xm,.s3m,.it,.mptm,.umx,.mo3,.mdl,.dbm,.far,.ult,.stm,.669,.mtm,.ams,.dsm,.amf,.okt,.ptm,.psm,.mt2,.gdm">
+    </div>
+    <script type='text/javascript'>
+        // Menu functionality
+        var menuApp = {
+            toggleMenu: function() {
+                var overlay = document.getElementById('menuOverlay');
+                var panel = document.getElementById('menuPanel');
+                overlay.classList.toggle('active');
+                panel.classList.toggle('active');
+            },
+            closeMenu: function() {
+                var overlay = document.getElementById('menuOverlay');
+                var panel = document.getElementById('menuPanel');
+                overlay.classList.remove('active');
+                panel.classList.remove('active');
+            },
+            showCredits: function() {
+                var overlay = document.getElementById('creditsOverlay');
+                var modal = document.getElementById('creditsModal');
+                overlay.classList.add('active');
+                modal.classList.add('active');
+                this.closeMenu();
+            },
+            closeCredits: function() {
+                var overlay = document.getElementById('creditsOverlay');
+                var modal = document.getElementById('creditsModal');
+                overlay.classList.remove('active');
+                modal.classList.remove('active');
+            }
+        };
+
+        // Set up menu event listeners
+        document.getElementById('hamburgerBtn').addEventListener('click', function() {
+            menuApp.toggleMenu();
+        });
+
+        document.getElementById('menuClose').addEventListener('click', function() {
+            menuApp.closeMenu();
+        });
+
+        document.getElementById('menuOverlay').addEventListener('click', function() {
+            menuApp.closeMenu();
+        });
+
+        // Load module button in menu
+        document.getElementById('loadModuleBtn').addEventListener('click', function() {
+            document.getElementById('fileInput').click();
+            menuApp.closeMenu();
+        });
+
+        // Credits button in menu
+        document.getElementById('creditsBtn').addEventListener('click', function() {
+            menuApp.showCredits();
+        });
+
+        // Credits modal close handlers
+        document.getElementById('creditsClose').addEventListener('click', function() {
+            menuApp.closeCredits();
+        });
+
+        document.getElementById('creditsOverlay').addEventListener('click', function() {
+            menuApp.closeCredits();
+        });
+
+        // Intercept AudioContext creation to capture it
+        var originalAudioContext = window.AudioContext || window.webkitAudioContext;
+        window.regrooveAudioContext = null;
+
+        window.AudioContext = function() {
+            var ctx = new originalAudioContext();
+            window.regrooveAudioContext = ctx;
+            console.log('Captured AudioContext:', ctx);
+            return ctx;
+        };
+        window.AudioContext.prototype = originalAudioContext.prototype;
+
+        if (window.webkitAudioContext) {
+            window.webkitAudioContext = window.AudioContext;
+        }
+
+
+
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            setStatus: function(text) {},
+            monitorRunDependencies: function(left) {},
+            onRuntimeInitialized: function() {
+                console.log('WASM runtime initialized, enumerating audio devices...');
+                // Wait for SDL audio to initialize
+                setTimeout(function() {
+                    enumerateAudioDevices();
+                }, 1000);
+            }
+        };
+
+        // Handle WebGL context loss and restoration
+        var canvas = document.getElementById('canvas');
+        canvas.addEventListener('webglcontextlost', function(e) {
+            console.error('WebGL context lost! Preventing default and attempting restore...');
+            e.preventDefault();
+        }, false);
+
+        canvas.addEventListener('webglcontextrestored', function() {
+            console.log('WebGL context restored! Calling C++ to reinitialize...');
+            // Call the C++ function to properly reinitialize ImGui and GL
+            if (Module._wasm_restore_gl_context) {
+                try {
+                    Module._wasm_restore_gl_context();
+                    console.log('GL context reinitialized successfully');
+                } catch(e) {
+                    console.error('Error during GL context restoration:', e);
+                }
+            } else {
+                console.error('wasm_restore_gl_context function not found');
+            }
+        }, false);
+
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess({ sysex: true }).then(
+                function(access) { console.log('MIDI OK'); },
+                function(err) { console.log('MIDI denied'); }
+            );
+        }
+
+        // Set up file input handler (for iPadOS/Safari compatibility)
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+
+            var reader = new FileReader();
+            reader.onload = function(event) {
+                var data = new Uint8Array(event.target.result);
+                var filename = file.name;
+
+                // Wait for WASM to be ready
+                if (typeof Module.FS === 'undefined') {
+                    console.error('WASM not ready yet');
+                    return;
+                }
+
+                // Create /tmp directory if it doesn't exist
+                try {
+                    Module.FS.mkdir('/tmp');
+                } catch(e) {}
+
+                // Write file to WASM virtual filesystem
+                var path = '/tmp/' + filename;
+                Module.FS.writeFile(path, data);
+
+                // Call C++ function to load the module
+                if (Module.ccall) {
+                    Module.ccall('wasm_load_module_callback', 'void', ['string'], [path]);
+                }
+
+                // Reset input so same file can be loaded again
+                e.target.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // Make file input globally accessible so WASM can trigger it (for ImGui button)
+        window.openFileDialog = function() {
+            document.getElementById('fileInput').click();
+        };
+
+        // Audio device enumeration and selection
+        async function enumerateAudioDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+
+                // Populate output device selector
+                const outputSelector = document.getElementById('outputDeviceList');
+                outputSelector.innerHTML = '<option value="">Default Output</option>';
+                audioOutputs.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Output ${outputSelector.options.length}`;
+                    outputSelector.appendChild(option);
+                });
+
+                console.log('Audio output devices enumerated:', audioOutputs.length);
+            } catch (error) {
+                console.warn('Could not enumerate audio devices:', error);
+            }
+        }
+
+        // Handle output device selection
+        document.getElementById('outputDeviceList').addEventListener('change', async function(e) {
+            const deviceId = e.target.value || '';
+            try {
+                // Use the captured AudioContext
+                var audioCtx = window.regrooveAudioContext;
+
+                if (!audioCtx) {
+                    console.warn('AudioContext not found - audio may not be initialized yet');
+                    return;
+                }
+
+                if (typeof audioCtx.setSinkId === 'function') {
+                    await audioCtx.setSinkId(deviceId);
+                    console.log('Output device changed to:', e.target.options[e.target.selectedIndex].text);
+                } else {
+                    console.warn('setSinkId not supported in this browser');
+                }
+            } catch (error) {
+                console.error('Failed to set output device:', error);
+            }
+        });
+
+
+        // Device enumeration will be called from Module.onRuntimeInitialized
+
+        // Register service worker for PWA support
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('./service-worker.js').then(
+                    function(registration) {
+                        console.log('ServiceWorker registered:', registration.scope);
+                    },
+                    function(err) {
+                        console.log('ServiceWorker registration failed:', err);
+                    }
+                );
+            });
+        }
+    </script>
+    <script async type="text/javascript" src="regroove.js"></script>
+</body>
+</html>
+

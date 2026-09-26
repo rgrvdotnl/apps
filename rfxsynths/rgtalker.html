@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RGTalker: Amiga Speech Synthesizer</title>
+  <style>
+    :root {
+      --accent:      #CF1A37;
+      --bg:          #0a0a0a;
+      --bg2:         #1a1a1a;
+      --bg3:         #2a2a2a;
+      --text:        #ffffff;
+      --text2:       #aaaaaa;
+      --border:      #333333;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      background: var(--accent);
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(0,0,0,.5);
+    }
+    .header a {
+      color: #fff;
+      text-decoration: none;
+      font-size: 1.4em;
+      line-height: 1;
+      padding: 4px 8px;
+      transition: opacity .2s;
+    }
+    .header a:hover { opacity: .7; }
+    .header h1 {
+      font-size: 1.1em;
+      font-weight: 600;
+      letter-spacing: .03em;
+    }
+    .status-dot {
+      margin-left: auto;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.3);
+      transition: background .4s;
+    }
+    .status-dot.ready  { background: #4caf50; }
+    .status-dot.active { background: #ff9800; }
+
+    /* ---- Main content ---- */
+    .main {
+      flex: 1;
+      max-width: 700px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ---- Cards ---- */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .card-title {
+      font-size: .7em;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text2);
+      margin-bottom: 14px;
+    }
+
+    /* ---- Text input ---- */
+    .text-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    #textInput {
+      flex: 1;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 1.05em;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    #textInput:focus { border-color: var(--accent); }
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: .9em;
+      font-weight: 600;
+      padding: 10px 18px;
+      transition: opacity .2s, transform .1s;
+      white-space: nowrap;
+    }
+    .btn:hover  { opacity: .85; }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .35; cursor: default; }
+    .btn-secondary {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+    .phonemes {
+      margin-top: 10px;
+      font-size: .8em;
+      color: var(--text2);
+      font-family: monospace;
+      letter-spacing: .05em;
+      min-height: 1.4em;
+    }
+    .phonemes span { color: #8ecfff; }
+
+    /* ---- Sliders ---- */
+    .param-row {
+      display: grid;
+      grid-template-columns: 100px 1fr 52px;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .param-row:last-child { margin-bottom: 0; }
+    .param-label {
+      font-size: .85em;
+      color: var(--text2);
+      text-align: right;
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--bg3);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #fff;
+      cursor: pointer;
+    }
+    .param-value {
+      font-size: .85em;
+      color: var(--text);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---- Playback row ---- */
+    .play-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .btn-speak {
+      flex: 1;
+      font-size: 1em;
+      padding: 12px 24px;
+      letter-spacing: .04em;
+    }
+    .btn-stop {
+      padding: 12px 20px;
+    }
+    .loop-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: .9em;
+      color: var(--text2);
+      cursor: pointer;
+      user-select: none;
+    }
+    .loop-check input[type=checkbox] {
+      width: 16px; height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    /* ---- Note name ---- */
+    .note-name {
+      color: var(--accent);
+      font-weight: 600;
+      margin-left: 2px;
+    }
+
+    /* ---- Status bar ---- */
+    #statusBar {
+      text-align: center;
+      font-size: .8em;
+      color: var(--text2);
+      padding: 4px 0;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <a href="index.html" title="Back">&#8592;</a>
+  <h1>RGTalker &mdash; Amiga Speech Synthesizer</h1>
+  <div class="status-dot" id="statusDot"></div>
+</div>
+
+<div class="main">
+
+  <!-- Text input -->
+  <div class="card">
+    <div class="card-title">Text to Speak</div>
+    <div class="text-row">
+      <input id="textInput" type="text" value="Hello World"
+             placeholder="Type something..." maxlength="511"
+             autocomplete="off" spellcheck="false">
+      <button class="btn" id="btnApply" disabled>Apply</button>
+    </div>
+    <div class="phonemes" id="phonemeDisplay">
+      <span>-</span>
+    </div>
+  </div>
+
+  <!-- Voice parameters -->
+  <div class="card">
+    <div class="card-title">Voice</div>
+
+    <div class="param-row">
+      <div class="param-label">Speed</div>
+      <input type="range" id="slSpeed" min="0.25" max="4" step="0.01" value="1">
+      <div class="param-value" id="valSpeed">1.00</div>
+    </div>
+    <div class="param-row">
+      <div class="param-label">Mouth</div>
+      <input type="range" id="slMouth" min="0.5" max="2" step="0.01" value="1">
+      <div class="param-value" id="valMouth">1.00</div>
+    </div>
+    <div class="param-row">
+      <div class="param-label">Throat</div>
+      <input type="range" id="slThroat" min="0.5" max="1.5" step="0.01" value="1">
+      <div class="param-value" id="valThroat">1.00</div>
+    </div>
+    <div class="param-row">
+      <div class="param-label">Breathiness</div>
+      <input type="range" id="slBreath" min="0" max="1" step="0.005" value="0.07">
+      <div class="param-value" id="valBreath">0.07</div>
+    </div>
+    <div class="param-row">
+      <div class="param-label">Volume</div>
+      <input type="range" id="slVolume" min="0" max="1" step="0.01" value="0.8">
+      <div class="param-value" id="valVolume">0.80</div>
+    </div>
+  </div>
+
+  <!-- Playback -->
+  <div class="card">
+    <div class="card-title">Playback</div>
+
+    <div class="param-row">
+      <div class="param-label">Pitch</div>
+      <input type="range" id="slPitch" min="0" max="127" step="1" value="60">
+      <div class="param-value" id="valPitch">60&nbsp;<span class="note-name" id="noteName">C4</span></div>
+    </div>
+    <div class="param-row">
+      <div class="param-label">Velocity</div>
+      <input type="range" id="slVelocity" min="1" max="127" step="1" value="100">
+      <div class="param-value" id="valVelocity">100</div>
+    </div>
+
+    <div class="play-controls">
+      <label class="loop-check">
+        <input type="checkbox" id="chkLoop"> Loop
+      </label>
+      <button class="btn btn-speak" id="btnSpeak" disabled>&#9654; Speak</button>
+      <button class="btn btn-secondary btn-stop" id="btnStop" disabled>&#9632; Stop</button>
+    </div>
+  </div>
+
+  <div id="statusBar">Loading WebAssembly module&hellip;</div>
+
+</div>
+
+<script src="rgtalker-synth.js"></script>
+<script>
+'use strict';
+
+/* ---- DOM refs ---- */
+const textInput      = document.getElementById('textInput');
+const btnApply       = document.getElementById('btnApply');
+const phonemeDisplay = document.getElementById('phonemeDisplay');
+const slSpeed        = document.getElementById('slSpeed');
+const slMouth        = document.getElementById('slMouth');
+const slThroat       = document.getElementById('slThroat');
+const slBreath       = document.getElementById('slBreath');
+const slVolume       = document.getElementById('slVolume');
+const valSpeed       = document.getElementById('valSpeed');
+const valMouth       = document.getElementById('valMouth');
+const valThroat      = document.getElementById('valThroat');
+const valBreath      = document.getElementById('valBreath');
+const valVolume      = document.getElementById('valVolume');
+const slPitch        = document.getElementById('slPitch');
+const slVelocity     = document.getElementById('slVelocity');
+const valPitch       = document.getElementById('valPitch');
+const valVelocity    = document.getElementById('valVelocity');
+const noteName       = document.getElementById('noteName');
+const chkLoop        = document.getElementById('chkLoop');
+const btnSpeak       = document.getElementById('btnSpeak');
+const btnStop        = document.getElementById('btnStop');
+const statusBar      = document.getElementById('statusBar');
+const statusDot      = document.getElementById('statusDot');
+
+/* ---- State ---- */
+let wasmModule    = null;
+let synthInstance = null;
+let audioCtx      = null;
+let scriptProc    = null;
+let bufPtr        = null;
+
+const BUF_SIZE = 512;
+
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function midiNoteName(n) {
+  return NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
+}
+
+function setStatus(msg) { statusBar.textContent = msg; }
+
+function setReady(ok) {
+  statusDot.className = 'status-dot' + (ok ? ' ready' : '');
+  btnApply.disabled  = !ok;
+  btnSpeak.disabled  = !ok;
+  btnStop.disabled   = !ok;
+}
+
+/* ---- Phoneme display ---- */
+function updatePhonemes() {
+  if (!wasmModule || !synthInstance) return;
+  const buf = wasmModule._malloc(1024);
+  wasmModule._regroove_synth_get_phoneme_string(synthInstance, buf, 1024);
+  const ph = wasmModule.UTF8ToString(buf);
+  wasmModule._free(buf);
+  phonemeDisplay.innerHTML = ph
+    ? '<span>' + ph.replace(/</g, '&lt;') + '</span>'
+    : '<span>-</span>';
+}
+
+/* ---- Apply text to engine ---- */
+function applyText() {
+  if (!wasmModule || !synthInstance) return;
+  wasmModule.ccall('regroove_synth_set_text', null,
+                   ['number', 'string'],
+                   [synthInstance, textInput.value]);
+  updatePhonemes();
+}
+
+/* ---- Push all slider values to engine ---- */
+function syncParams() {
+  if (!wasmModule || !synthInstance) return;
+  wasmModule._regroove_synth_set_speed(synthInstance, parseFloat(slSpeed.value));
+  wasmModule._regroove_synth_set_mouth(synthInstance, parseFloat(slMouth.value));
+  wasmModule._regroove_synth_set_throat(synthInstance, parseFloat(slThroat.value));
+  wasmModule._regroove_synth_set_breathiness(synthInstance, parseFloat(slBreath.value));
+  wasmModule._regroove_synth_set_volume(synthInstance, parseFloat(slVolume.value));
+  wasmModule._regroove_synth_set_loop(synthInstance, chkLoop.checked ? 1 : 0);
+}
+
+/* ---- Audio init (on first Speak click) ---- */
+async function ensureAudio() {
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    return;
+  }
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  /* Re-create synth at the real sample rate */
+  wasmModule._regroove_synth_destroy(synthInstance);
+  synthInstance = wasmModule._regroove_synth_create(0, audioCtx.sampleRate);
+  applyText();
+  syncParams();
+
+  bufPtr = wasmModule._malloc(BUF_SIZE * 2 * 4);
+
+  scriptProc = audioCtx.createScriptProcessor(BUF_SIZE, 0, 2);
+  scriptProc.onaudioprocess = (e) => {
+    const outL = e.outputBuffer.getChannelData(0);
+    const outR = e.outputBuffer.getChannelData(1);
+    wasmModule._regroove_synth_process_f32(synthInstance, bufPtr, BUF_SIZE, audioCtx.sampleRate);
+    const offset = bufPtr >>> 2;
+    const heap   = wasmModule.HEAPF32;
+    for (let i = 0; i < BUF_SIZE; i++) {
+      outL[i] = heap[offset + i * 2];
+      outR[i] = heap[offset + i * 2 + 1];
+    }
+  };
+  scriptProc.connect(audioCtx.destination);
+
+  setStatus('Audio ready: ' + audioCtx.sampleRate + ' Hz');
+}
+
+/* ---- Slider bindings ---- */
+function bindSlider(slider, display, decimals, onchange) {
+  function update() {
+    const v = parseFloat(slider.value);
+    display.textContent = v.toFixed(decimals);
+    if (onchange) onchange(v);
+  }
+  slider.addEventListener('input', update);
+  update();
+}
+
+bindSlider(slSpeed,   valSpeed,   2, v => wasmModule && synthInstance && wasmModule._regroove_synth_set_speed(synthInstance, v));
+bindSlider(slMouth,   valMouth,   2, v => wasmModule && synthInstance && wasmModule._regroove_synth_set_mouth(synthInstance, v));
+bindSlider(slThroat,  valThroat,  2, v => wasmModule && synthInstance && wasmModule._regroove_synth_set_throat(synthInstance, v));
+bindSlider(slBreath,  valBreath,  2, v => wasmModule && synthInstance && wasmModule._regroove_synth_set_breathiness(synthInstance, v));
+bindSlider(slVolume,  valVolume,  2, v => wasmModule && synthInstance && wasmModule._regroove_synth_set_volume(synthInstance, v));
+
+slPitch.addEventListener('input', () => {
+  const n = parseInt(slPitch.value);
+  valPitch.innerHTML = n + '&nbsp;<span class="note-name">' + midiNoteName(n) + '</span>';
+});
+slPitch.dispatchEvent(new Event('input'));
+
+slVelocity.addEventListener('input', () => {
+  valVelocity.textContent = slVelocity.value;
+});
+
+chkLoop.addEventListener('change', () => {
+  if (wasmModule && synthInstance)
+    wasmModule._regroove_synth_set_loop(synthInstance, chkLoop.checked ? 1 : 0);
+});
+
+/* ---- Text / Apply ---- */
+btnApply.addEventListener('click', applyText);
+textInput.addEventListener('keydown', e => { if (e.key === 'Enter') applyText(); });
+
+/* ---- Speak / Stop ---- */
+btnSpeak.addEventListener('click', async () => {
+  await ensureAudio();
+  syncParams();
+  const note = parseInt(slPitch.value);
+  const vel  = parseInt(slVelocity.value);
+  wasmModule._regroove_synth_note_on(synthInstance, note, vel);
+  statusDot.className = 'status-dot active';
+  setStatus('Speaking…');
+});
+
+btnStop.addEventListener('click', () => {
+  if (wasmModule && synthInstance) {
+    wasmModule._regroove_synth_all_notes_off(synthInstance);
+    statusDot.className = 'status-dot ready';
+    setStatus('Stopped.');
+  }
+});
+
+/* ---- WASM init ---- */
+window.addEventListener('load', async () => {
+  try {
+    wasmModule = await RGTalkerModule();
+    /* Use 44100 as a placeholder; re-created with real SR on first Speak */
+    synthInstance = wasmModule._regroove_synth_create(0, 44100);
+    applyText();
+    setReady(true);
+    setStatus('Ready. Click Speak to play.');
+  } catch (err) {
+    setStatus('Failed to load WASM: ' + err.message);
+    console.error(err);
+  }
+});
+</script>
+</body>
+</html>

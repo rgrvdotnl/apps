@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="A gabber kick sequencer for the real hakken!">
+    <meta name="theme-color" content="#CF1A37">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Hakkuh">
+    <title>Regroove Hakkuh</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="96x96" href="favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512x512.png">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- HTML top bar - replaces the native ImGui banner on WASM. The
+         hamburger opens/closes the in-app SETTINGS view by calling the
+         exported hakkuh_toggle_settings() function. -->
+    <div class="top-banner">
+        <button class="hamburger-button" id="hamburgerBtn" title="Settings">☰</button>
+        <div class="banner-title">Regroove Hakkuh</div>
+    </div>
+
+    <!-- Content area with canvas -->
+    <div class="content">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+
+    <script type='text/javascript'>
+        var pendingSettingsToggle = false;
+
+        function settingsReady() {
+            return typeof Module !== 'undefined' && Module.calledRun &&
+                   typeof Module._hakkuh_toggle_settings === 'function';
+        }
+
+        function doToggleSettings() {
+            if (settingsReady()) {
+                Module._hakkuh_toggle_settings();
+            } else {
+                // Runtime not up yet - fire the toggle as soon as it is.
+                pendingSettingsToggle = true;
+            }
+        }
+
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            setStatus: function(text) {},
+            monitorRunDependencies: function(left) {},
+            onRuntimeInitialized: function() {
+                if (pendingSettingsToggle) {
+                    pendingSettingsToggle = false;
+                    Module._hakkuh_toggle_settings();
+                }
+            }
+        };
+
+        // The hamburger toggles the in-app settings view (native banner's job
+        // elsewhere). Its first tap is also a user activation, so Web MIDI
+        // access - requested lazily from inside hakkuh_toggle_settings - can
+        // show its permission prompt.
+        document.getElementById('hamburgerBtn').addEventListener('click', function() {
+            doToggleSettings();
+        });
+
+        // Browsers start the AudioContext suspended; it must be resumed from a
+        // user gesture before any sound plays. Keep (re)attempting on every
+        // interaction until it is actually running.
+        function resumeAudio() {
+            var ctx = null;
+            if (typeof SDL3 !== 'undefined' && SDL3.audioContext) {
+                ctx = SDL3.audioContext;
+            } else if (typeof SDL !== 'undefined' && SDL.audioContext) {
+                ctx = SDL.audioContext;
+            } else if (typeof Module !== 'undefined' && Module.SDL3 && Module.SDL3.audioContext) {
+                ctx = Module.SDL3.audioContext;
+            }
+            if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
+                ctx.resume();
+            }
+        }
+        document.addEventListener('pointerdown', resumeAudio);
+        document.addEventListener('keydown', resumeAudio);
+
+        // Register service worker for PWA support
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('./service-worker.js').then(
+                    function(registration) {
+                        console.log('ServiceWorker registered:', registration.scope);
+                    },
+                    function(err) {
+                        console.log('ServiceWorker registration failed:', err);
+                    }
+                );
+            });
+        }
+    </script>
+    <script async type="text/javascript" src="hakkuh.js"></script>
+</body>
+</html>

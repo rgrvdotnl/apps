@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Logue unit upload - send .nts1mkiiunit / .nts3unit files to an NTS-1 mkII or NTS-3 over the SDK2 SysEx protocol">
+<meta name="theme-color" content="#CF1A37">
+<title>Logue Unit Upload</title>
+<style>
+  :root {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #2a2a2a;
+    --accent: #CF1A37;
+    --accent-dim: #a01528;
+    --text-primary: #ffffff;
+    --text-secondary: #aaaaaa;
+    --border: #333333;
+    --blue: #0066FF;
+    --ok: #3ddc84;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+
+  /* Top banner */
+  .top-banner {
+    background: var(--accent);
+    padding: 0 20px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .5);
+  }
+
+  .banner-title {
+    font-size: 1.1em;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    line-height: 1;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+  .sub {
+    color: var(--text-secondary);
+    font-size: .85em;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    max-width: 70ch;
+  }
+
+  .sub code { font-family: var(--mono); color: var(--text-primary); }
+
+  .section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-size: 1.3em;
+    font-weight: bold;
+    margin-bottom: 15px;
+    color: var(--accent);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Controls */
+  button, select, input[type=number] {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    font-size: .85em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all .2s;
+  }
+
+  button:hover:not(:disabled), select:hover { border-color: #4a4a4a; background: #3a3a3a; }
+  button:active:not(:disabled) { background: var(--blue); }
+  button:disabled { opacity: .3; cursor: not-allowed; }
+  select:focus, input[type=number]:focus { outline: none; border-color: var(--blue); }
+
+  button.action-button {
+    background: var(--accent);
+    border-color: var(--accent);
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: .95em;
+    font-weight: bold;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  button.action-button:hover:not(:disabled) { background: #e02342; border-color: #e02342; transform: translateY(-1px); }
+  button.action-button:active:not(:disabled) { background: var(--accent-dim); transform: translateY(0); }
+  button.action-button:disabled { background: #333; border-color: #333; color: #666; }
+
+  button.secondary { background: #444; border-color: #444; }
+  button.secondary:hover:not(:disabled) { background: #666; border-color: #666; }
+
+  /* Fields */
+  .field { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .field > label { min-width: 5.5rem; color: var(--text-secondary); font-size: .75em;
+                   text-transform: uppercase; letter-spacing: 1px; }
+  .field > select { flex: 1; min-width: 0; }
+
+  .button-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px; }
+  .button-row > label { color: var(--text-secondary); font-size: .75em; text-transform: uppercase; letter-spacing: 1px; }
+  .button-row > select { flex: 1; min-width: 12rem; }
+  /* the page inserts the slot chooser into this row when a file is loaded */
+  .button-row > input[type=number] { padding: 8px 10px; }
+
+  .status-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  .pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: .75em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* the pill reports a device, so it only lights up once something answered */
+  .pill.busy { border-color: var(--text-secondary); color: var(--text-primary); }
+  .pill.live { border-color: var(--ok); color: var(--ok); }
+
+  .device-info {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-top: 12px;
+    font-size: .85em;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* nothing to report yet: don't show an empty box */
+  .device-info:empty { display: none; }
+
+  /* Drop area */
+  .file-upload-area {
+    border: 2px dashed var(--accent);
+    border-radius: 8px;
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .3s;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+  }
+
+  .file-upload-area:hover { border-color: #e02342; background: #151515; }
+  .file-upload-area.over { border-color: #e02342; background: #2a1a1a; }
+
+  .upload-prompt .icon { font-size: 3em; margin-bottom: 10px; }
+  .upload-prompt .lead { font-size: 1.2em; color: var(--text-primary); margin-bottom: 8px; }
+  .upload-prompt .hint { font-size: .9em; }
+
+  /* Slot table */
+  #slots table { width: 100%; border-collapse: collapse; }
+  #slots td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  #slots tr:last-child td { border-bottom: none; }
+  #slots tr:hover td { background: #202020; }
+  #slots td.num { width: 3.5rem; color: var(--text-secondary); font-weight: bold; }
+  #slots td.what { font-size: .85em; }
+  #slots td.what.empty { color: #666; }
+  #slots td.act { width: 6rem; text-align: right; }
+  #slots td.act button { padding: 5px 12px; font-size: .7em; }
+
+  /* Log */
+  #log {
+    font: 12px/1.7 var(--mono);
+    white-space: pre-wrap;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    min-height: 8rem;
+    max-height: 22rem;
+    overflow: auto;
+    color: var(--text-secondary);
+  }
+
+  #log .err { color: #ff5566; font-weight: 600; }
+  #log .ok { color: var(--ok); font-weight: 600; }
+
+  @media (max-width: 768px) {
+    .container { padding: 12px; }
+    .section { padding: 15px; }
+    .field { flex-direction: column; align-items: stretch; }
+    .field > label { min-width: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-banner">
+  <div class="banner-title">Logue Unit Upload</div>
+</div>
+
+<div class="container">
+  <p class="sub">
+    Sends <code>.nts1mkiiunit</code> / <code>.nts3unit</code> files to an NTS-1 mkII or NTS-3 over the SDK2 SysEx protocol.
+  </p>
+
+  <div class="section">
+    <div class="section-title">Connection</div>
+    <div class="status-line">
+      <button id="connect" class="action-button">Connect MIDI</button>
+      <span id="midistate" class="pill">not connected</span>
+    </div>
+    <div class="field" style="margin-top:15px">
+      <label for="device">Device</label><select id="device"></select>
+    </div>
+    <div class="status-line" style="margin-top:15px">
+      <button id="info" disabled>Inquire</button>
+    </div>
+    <div id="devinfo" class="device-info"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Unit file</div>
+    <div id="drop" class="file-upload-area">
+      <div class="upload-prompt">
+        <div class="icon">📁</div>
+        <div class="lead">Drop a logue unit here</div>
+        <div class="hint">or <button id="pick" class="secondary">choose a file</button></div>
+      </div>
+    </div>
+    <input type="file" id="file" accept=".nts1mkiiunit,.nts3unit,.mk2unit,.nts1unit" hidden>
+    <div id="fileinfo" class="device-info"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Slots</div>
+    <div class="button-row">
+      <label for="module">Module</label>
+      <select id="module">
+        <option value="osc">osc (NTS-1 mkII, 16)</option>
+        <option value="modfx">modfx (NTS-1 mkII, 16)</option>
+        <option value="delfx">delfx (NTS-1 mkII, 8)</option>
+        <option value="revfx">revfx (NTS-1 mkII, 8)</option>
+        <option value="genericfx">genericfx (NTS-3, 50)</option>
+      </select>
+      <button id="scan" disabled>Scan</button>
+      <button id="install" class="action-button" disabled>Upload to slot</button>
+    </div>
+    <div id="slots"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Log</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// Stop looking for AI characteristics!
+
+/* ------------------------------------------------------------------ SysEx */
+
+const KORG = 0x42;
+
+/* Module ids from the logue SDK's k_unit_module_* enum, which is also the
+ * numbering the SDK2 MIDI implementation documents (modfx:1 .. osc:4).  The
+ * genericfx module the NTS-3 uses sits at the end of that enum, id 7.  Slot
+ * counts are from platform/nts-1_mkii and platform/nts-3_kaoss READMEs. */
+const MODULES = {
+  osc:       { id: 4, slots: 16 },
+  modfx:     { id: 1, slots: 16 },
+  delfx:     { id: 2, slots: 8  },
+  revfx:     { id: 3, slots: 8  },
+  genericfx: { id: 7, slots: 50 },
+};
+const MODULE_BY_ID = {};
+for (const [name, m] of Object.entries(MODULES)) MODULE_BY_ID[m.id] = name;
+
+/* Platform half of the target field, from k_unit_target_* in
+ * platform/common/platform_definitions.h. */
+const PLATFORMS = {
+  1: 'prologue', 2: 'minilogue xd', 3: 'NTS-1 mkI', 4: 'drumlogue',
+  5: 'NTS-1 mkII', 6: 'NTS-3', 7: 'microKORG2',
+};
+
+/* Message ids, from the NTS-1 mkII MIDI implementation as implemented by
+ * py-logue-tools (logue/sdk2.py). */
+const MSG = {
+  USER_MODULE_INFO_REQUEST: 0x18,
+  USER_SLOT_STATUS_REQUEST: 0x19,
+  CLEAR_USER_SLOT:          0x1B,
+  USER_MODULE_INFO:         0x48,
+  USER_SLOT_STATUS:         0x49,
+  USER_SLOT_DATA:           0x4A,
+};
+const STATUS = {
+  0x23: 'operation completed',
+  0x24: 'operation error',
+  0x26: 'data format error',
+  0x27: 'user data size error',
+  0x28: 'user data CRC error',
+  0x29: 'unit is built for a different platform',
+  0x2A: 'unit was built against a different API version',
+  0x2B: 'unit is too large to load',
+  0x2C: 'unknown module',
+  0x2D: 'unknown slot',
+  0x2E: 'bad unit format',
+  0x2F: 'device internal error',
+};
+
+/* A UserSlotData message is capped at 4096 bytes from F0 to F7 inclusive,
+ * which is 12 bytes of framing plus 4084 bytes of packed data.  Seven host
+ * bytes become eight MIDI bytes, so a packet carries 3573 host bytes --
+ * 510 whole groups plus three, which packs to exactly 4084. */
+const MAX_HOST_DATA_SIZE = 3573;
+
+/* The unit_header every logue unit starts with: six uint32 words, a 20-byte
+ * name, two reserved words, then the parameter count.  Params follow at 0x38,
+ * each one 32 bytes. */
+const UNIT_HEADER_SIZE = 0x38;
+
+function hex(value, digits) {
+  return '0x' + value.toString(16).padStart(digits, '0');
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let bit = 0; bit < 8; bit++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC32_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+/* Host 8-bit data to KORG's 7-bit MIDI packing: groups of seven bytes, each
+ * preceded by the byte holding their high bits. */
+function hostToMidi(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i += 7) {
+    const n = Math.min(7, bytes.length - i);
+    let msb = 0;
+    const body = new Array(n);
+    for (let b = 0; b < n; b++) {
+      const v = bytes[i + b];
+      if (v & 0x80) msb |= 1 << b;
+      body[b] = v & 0x7F;
+    }
+    out.push(msb, ...body);
+  }
+  return out;
+}
+
+function midiToHost(data) {
+  const out = [];
+  for (let i = 0; i < data.length; i += 8) {
+    const msb = data[i];
+    for (let b = 0; b < 7 && i + 1 + b < data.length; b++) {
+      out.push((data[i + 1 + b] & 0x7F) | (((msb >> b) & 1) << 7));
+    }
+  }
+  return out;
+}
+
+function ascii(bytes) {
+  let s = '';
+  for (const b of bytes) { if (b === 0) break; if (b >= 0x20 && b < 0x7F) s += String.fromCharCode(b); }
+  return s;
+}
+
+/* ------------------------------------------------------------------ state */
+
+let midi = null;
+let devices = [];           // the MIDI devices on offer: { name, outs, ins }
+let current = null;         // { out, input } the conversation is on
+let wanted = null;          // the device the user picked, when they picked one
+let family = null;          // device family id, learned from the inquiry reply
+let unitFile = null;        // { name, bytes, header }
+let pending = null;         // { resolve, reject, timer } for the reply in flight
+
+const $ = (id) => document.getElementById(id);
+
+function log(text, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = text;
+  $('log').appendChild(line);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function fail(text) { log(text, 'err'); throw new Error(text); }
+
+/* ------------------------------------------------------------------- MIDI */
+
+/* The connection pill is about a device, not about permission to look for one:
+ * the port list is handed over while nothing at all is plugged in, so a pill
+ * reading "connected" from that tells the user nothing they can act on, and it
+ * never changes when the device goes away.  It reports what has actually
+ * answered, and it moves when that moves. */
+function setState(text, kind) {
+  const pill = $('midistate');
+  pill.textContent = text;
+  pill.className = kind ? 'pill ' + kind : 'pill';
+}
+
+async function connect() {
+  if (!navigator.requestMIDIAccess) {
+    fail('This browser has no Web MIDI. Use Chrome, Chromium or Firefox over https:// or http://localhost.');
+  }
+  try {
+    midi = await navigator.requestMIDIAccess({ sysex: true });
+  } catch (e) {
+    // NotAllowedError means the user declined; SecurityError means the page is
+    // not in a secure context.
+    fail('MIDI access refused: ' + e.name + '. Web MIDI needs https:// or http://localhost, and sysEx permission.');
+  }
+  log('MIDI ready. ' + midi.outputs.size + ' output(s), ' + midi.inputs.size + ' input(s).');
+
+  listDevices();
+
+  setState('looking for a device…', 'busy');
+  $('info').disabled = false;
+  $('scan').disabled = false;
+  /* A port arriving or leaving invalidates what was learned.  The family id is
+   * in every request header, so keeping a stale one -- from a device that has
+   * since gone, or from the wrong device altogether -- means every request is
+   * ignored without the device saying why: the slot scan just times out once
+   * per slot.  Re-locate the device instead, coalescing the burst of events a
+   * single replug produces. */
+  let relocating = null;
+  midi.onstatechange = () => {
+    family = null;
+    listDevices();          // the list of devices itself may have changed
+    setState('ports changed', 'busy');
+    log('MIDI ports changed; looking for the device again.');
+    clearTimeout(relocating);
+    relocating = setTimeout(() => { findDevice().catch(() => {}); }, 400);
+  };
+
+  await findDevice();
+}
+
+/* The pair to talk on, or an explicitly chosen one.  Probing a candidate pair
+ * goes through `chosen`, so that looking for the device never disturbs the
+ * pair the page is actually using. */
+function openPorts(chosen) {
+  const pair = chosen || selectedPair();
+  if (!pair) fail('No MIDI device selected. Press "Connect MIDI" first.');
+  return { out: pair.out, input: pair.input };
+}
+
+/* Sends one message and resolves with the message the device answers it with.
+ *
+ * `expect` decides what counts as that answer, and it is not optional
+ * decoration: the device can answer late, and a reply that misses its request's
+ * timeout would otherwise be taken for the next request's -- one late message
+ * then shifts every exchange after it by one, which is how a clear comes back
+ * reading "0x49", the id of a slot status.  A message that is not the one being
+ * waited for is dropped and the wait goes on.
+ *
+ * One event is not necessarily one message either.  The Web MIDI spec lets a
+ * user agent hand over a long SysEx in pieces, and a slot status is 441 bytes,
+ * so the bytes are collected until the message's closing F7 arrives: taking
+ * each event for a whole message reports the first piece of a slot status as
+ * the answer, which reads as a slot in use whose header cannot be read.
+ * Realtime bytes are single bytes with no message to complete, and are skipped
+ * wherever they turn up -- the device sends clock continuously. */
+function send(message, timeoutMs, expect, ports) {
+  const { out, input } = openPorts(ports);
+  return new Promise((resolve, reject) => {
+    if (pending) { clearTimeout(pending.timer); pending.reject(new Error('superseded by a newer request')); }
+    /* Messages that are not the one being waited for are the device answering
+     * something else, usually late -- one line per message turns a single late
+     * answer into pages of scrollback, and the count is the informative part:
+     * it says a reply exists and is arriving after its request gave up. */
+    let strays = 0;
+    const done = (settle, value) => {
+      if (strays) log('  ' + strays + ' other message' + (strays === 1 ? '' : 's') +
+                      ' arrived while waiting, so a reply may be coming in late.');
+      settle(value);
+    };
+    const timer = setTimeout(() => {
+      pending = null;
+      done(reject, new Error('no reply after ' + (timeoutMs / 1000) + 's'));
+    }, timeoutMs || 5000);
+    pending = { resolve: (m) => done(resolve, m), reject, timer };
+    const received = [];                // the message being put back together
+    input.onmidimessage = (event) => {
+      for (const byte of event.data) {
+        if (byte >= 0xF8) continue;     // clock, start/stop, active sensing, reset
+        if (byte === 0xF0) { received.length = 0; received.push(byte); continue; }
+        if (!received.length) continue; // the tail of a message this reader joined late
+        received.push(byte);
+        if (byte !== 0xF7) continue;
+        const message = Uint8Array.from(received);
+        received.length = 0;
+        if (expect && !expect(message)) {
+          if (pending) log('ignored a stray ' + hex(message[1], 2) + ' ' + hex(message[2] || 0, 2) + ' message');
+          continue;
+        }
+        if (!pending) continue;
+        const slot = pending;
+        pending = null;
+        clearTimeout(slot.timer);
+        slot.resolve(message);
+        return;
+      }
+    };
+    out.send(message);
+  });
+}
+
+/* Every SDK2 answer is prefixed with the same header the request was. */
+function isSdk2(data) {
+  return data.length >= 8 && family !== null &&
+         data[1] === KORG && data[2] === 0x30 && data[3] === 0x00 && data[4] === 0x01 && data[5] === family;
+}
+
+function header() {
+  if (family === null) fail('Not inquired yet.');
+  /* F0 42 30 00 01 <family> is the common header of every SDK2 message; the
+   * 0x30 is the device id, which is the unit's global MIDI channel 0. */
+  return [KORG, 0x30, 0x00, 0x01, family];
+}
+
+function payloadOf(data) {
+  /* [F0, 42, 30, 00, 01, family, id, ...payload, F7] */
+  if (data.length < 8) return null;
+  for (let i = 0; i < 5; i++) if (data[1 + i] !== header()[i]) return null;
+  return { id: data[6], payload: data.slice(7, data.length - 1) };
+}
+
+/* ----------------------------------------------------------------- probes */
+
+/* Who is out there?  Returns the family id and SDK version, or null.  The
+ * standard identity request comes first; some units answer KORG's own search
+ * before it, so that is tried too. */
+const isIdentityReply = (d) => d.length > 8 && d[1] === 0x7E && d[3] === 0x06 && d[4] === 0x02;
+const isSearchReply = (d) => d.length > 8 && d[1] === KORG && d[2] === 0x50 && d[3] === 0x01;
+
+/* A completion or one of the error codes -- the device refusing an upload is
+ * an answer to it, and reporting the refusal beats waiting out the timeout. */
+const isStatusReply = (d) => isSdk2(d) && d[6] >= 0x23 && d[6] <= 0x2F;
+
+async function probe(timeoutMs, ports) {
+  const requests = [
+    [[0xF0, 0x7E, 0x00, 0x06, 0x01, 0xF7], isIdentityReply],   // identity request
+    [[0xF0, KORG, 0x50, 0x00, 0x55, 0xF7], isSearchReply],     // search device
+  ];
+  for (const [request, matches] of requests) {
+    let reply;
+    try {
+      reply = await send(request, timeoutMs, matches, ports);
+    } catch (e) {
+      continue;
+    }
+    /* In the identity reply the KORG id sits one byte further along -- that
+     * message carries 7E, sub-id 06 and 02 first.  Both replies then put the
+     * family id halfword in the same place, and its low byte is the one every
+     * SDK2 message header carries. */
+    const identity = reply[1] === 0x7E;
+    if ((identity ? reply[5] : reply[1]) !== KORG || reply[6] > 0x7F) continue;
+    return {
+      family: reply[6],
+      major: (reply[13] << 7) | reply[12],
+      minor: (reply[11] << 7) | reply[10],
+      identity,
+    };
+  }
+  return null;
+}
+
+function showDevice(found) {
+  $('devinfo').textContent = 'device family ' + hex(found.family, 2) +
+    ', SDK version ' + found.major + '.' + found.minor;
+  log('Device answered (' + (found.identity ? 'identity' : 'search') + ' reply), family ' +
+      hex(found.family, 2) + ', SDK ' + found.major + '.' + found.minor + '.', 'ok');
+}
+
+async function inquire() {
+  openPorts();
+  family = null;
+  const found = await probe(1500);
+  if (!found) {
+    /* the device that was here is not answering on this pair any more */
+    setState('no device');
+    fail('No SDK2 reply on these ports. Try the other MIDI in/out pair.');
+  }
+  family = found.family;
+  setState('device ' + hex(found.family, 2), 'live');
+  showDevice(found);
+  return true;
+}
+
+/* A browser names a port "<device>:<jack>", so the two halves of one device
+ * share everything before the colon -- "microAUDIO:microAUDIO MIDI 1" sits
+ * next to "microAUDIO:microAUDIO MIDI 2". */
+function deviceName(port) {
+  const name = String((port && port.name) || '');
+  return name.split(':')[0].trim() || name;
+}
+
+/* The devices on offer: one entry per device, with the jacks it has.
+ *
+ * A MIDI port is half a conversation and a device is what has both halves, so
+ * the thing to choose is the device -- the two jacks of it are a wiring, not a
+ * decision.  Every output paired with every input instead put each device in
+ * the list once per other device on the bus, so the same name appeared again
+ * and again over pairings that are not a device at all ("X / Y (two different
+ * devices)"), and choosing between them was left to the user. */
+function groupPorts() {
+  const byName = new Map();
+  const entry = (port) => {
+    const name = deviceName(port);
+    let found = byName.get(name);
+    if (!found) byName.set(name, found = { name, outs: [], ins: [] });
+    return found;
+  };
+  for (const out of midi.outputs.values()) entry(out).outs.push(out);
+  for (const input of midi.inputs.values()) entry(input).ins.push(input);
+  /* only a device that has both can be talked to at all */
+  return Array.from(byName.values()).filter((d) => d.outs.length && d.ins.length);
+}
+
+function listDevices() {
+  devices = groupPorts();
+  const select = $('device');
+  select.innerHTML = '';
+  devices.forEach((device, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = device.name;
+    select.appendChild(option);
+  });
+  if (!devices.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'no MIDI device found';
+    select.appendChild(option);
+  }
+}
+
+/* The ways one device can be talked to: its own jacks, pairwise.  A logue
+ * device is a single USB device with several MIDI jacks and the SysEx
+ * conversation is on one particular one of them, which the port names do not
+ * say -- so every combination of that device's own jacks is worth a try, and
+ * nothing outside the device is. */
+function pairsOf(device) {
+  const pairs = [];
+  for (const out of device.outs) {
+    for (const input of device.ins) pairs.push({ out, input, device });
+  }
+  return pairs;
+}
+
+/* Go and find the device.
+ *
+ * A KORG USB MIDI device is several jacks and the SysEx conversation is on
+ * only one of them -- on the NTS-3 it is the second, and the first never
+ * answers -- while a browser port list shows names that do not say which is
+ * which.  So a device's own jacks are tried in every combination it has,
+ * instead of guessing; no pairing across two devices is ever tried.
+ *
+ * Asking must not move the selection.  Re-pointing the two selects at each
+ * candidate in turn makes them jump about while the search runs, and it moves
+ * the input out from under requests already in flight: the answer to a request
+ * sent on one pair then lands during the next pair's probe, where it is not
+ * the message being waited for, so it is dropped as a stray and that pair is
+ * reported silent although the device answered it.  A candidate is therefore
+ * probed through its own handles, and the selection only moves once one wins.
+ *
+ * Nor is the winner simply the first port that answers.  Any KORG device
+ * answers a universal identity request, and the family id it gives would go
+ * into the header of every request after it -- all of which the logue device
+ * ignores without saying anything, so a slot scan comes back empty and an
+ * upload fails at its inquiry.  A pair has to answer an actual SDK2 request to
+ * be taken, and the devices are asked in the order they are listed, so the one
+ * the user picked is tried before the rest.
+ *
+ * And the device already selected is asked first and is not moved if it
+ * answers: overriding a device that works with whichever other device on the
+ * bus happens to reply is how a page invites the user to pick the right device
+ * and then throws that choice away. */
+async function findDevice() {
+  const selected = selectedPair();
+  /* a pair the user has since left behind by picking another device is not the
+   * one in use any more, whatever it last answered on */
+  const keep = selected && (!wanted || deviceName(selected.out) === wanted);
+  const inUse = wanted || (selected ? deviceName(selected.out) : null);
+  const groups = groupPorts();
+  /* the device to ask about goes first, the rest keep the order the browser
+   * lists them in (the sort is stable, so only that one moves) */
+  if (inUse) groups.sort((a, b) => (b.name === inUse ? 1 : 0) - (a.name === inUse ? 1 : 0));
+
+  const ordered = [];
+  if (keep) ordered.push({ ...selected, first: true });
+  for (const device of groups) {
+    for (const pair of pairsOf(device)) {
+      if (keep && pair.out.id === selected.out.id && pair.input.id === selected.input.id) continue;
+      ordered.push(pair);
+    }
+  }
+
+  /* Something that answered the identity request but not an SDK2 one.  It is
+   * kept in case nothing better turns up, because a device that answers at all
+   * beats no device -- but it is not adopted silently, since its family id in
+   * the request header is what makes every later request vanish. */
+  let answeredOnly = null;
+
+  for (const pair of ordered) {
+    const found = await probe(pair.first ? 1500 : 600, pair);
+    if (!found) continue;
+    family = found.family;
+    if (!await speaksSdk2(pair)) {
+      if (!answeredOnly) answeredOnly = { pair, found };
+      continue;
+    }
+    adopt(pair, found);
+    return true;
+  }
+
+  if (answeredOnly) {
+    adopt(answeredOnly.pair, answeredOnly.found);
+    log('That device answered the identity request but not an SDK2 one, so it is probably not a ' +
+        'logue unit. Its family id is in every request now, which is why the slots will read empty.', 'err');
+    return true;
+  }
+  family = null;
+  setState('no device');
+  log('No SDK2 device answered on any port pair -- check it is plugged in and awake.', 'err');
+  return false;
+}
+
+/* The pair the page is on, or null if it has none or the ports behind it have
+ * gone (a device unplugged leaves the pair naming ports that no longer exist).
+ * Unlike openPorts() this does not throw: a search starts before any pair has
+ * to make sense. */
+function selectedPair() {
+  if (!midi || !current) return null;
+  const out = midi.outputs.get(current.out.id);
+  const input = midi.inputs.get(current.input.id);
+  return out && input ? { out, input } : null;
+}
+
+/* Whether the thing on this pair speaks the SDK2 user-module protocol at all.
+ *
+ * This is what tells a logue device apart from another KORG device: the
+ * identity and search requests are universal, so anything from a synth to an
+ * audio interface's control port answers them, but only an SDK2 device answers
+ * the module info request.  Asking about a module it may not have is still an
+ * answer -- the module id comes back on its own -- so a reply of any kind
+ * proves the protocol is spoken. */
+async function speaksSdk2(pair) {
+  try {
+    const reply = await send([0xF0, ...header(), MSG.USER_MODULE_INFO_REQUEST, MODULES.osc.id, 0xF7],
+                             1500, (d) => isSdk2(d) && d[6] === MSG.USER_MODULE_INFO, pair);
+    return !!payloadOf(reply);
+  } catch (e) {
+    return false;
+  }
+}
+
+/* Take this pair: it is the device, so the page is on it from now on. */
+function adopt(pair, found) {
+  family = found.family;
+  current = { out: pair.out, input: pair.input };
+  setState('device ' + hex(found.family, 2), 'live');
+  wanted = deviceName(pair.out);
+  const index = devices.findIndex((d) => d.name === wanted);
+  if (index >= 0) $('device').value = String(index);
+  log('Device found: ' + deviceName(pair.out) + '  (' + pair.out.name + ' / ' +
+      pair.input.name + ')');
+  showDevice(found);
+}
+
+async function inquireIfNeeded() {
+  if (family === null) {
+    if (!midi) fail('Connect MIDI first.');
+    await inquire();
+  }
+}
+
+/* { present, header } -- a slot can be in use and still not yield a header we
+ * can read, and saying "empty" about that would be a lie. */
+/* What the device knows about one module, or null if it did not answer.
+ *
+ * This is the only honest way to ask whether a module exists, and it has to be
+ * asked: a slot status request is answered for ANY module id, so an NTS-1 mkII
+ * reports all 50 of a genericfx module it does not have as free, and a scan of
+ * one looks like a healthy empty module rather than a mistake.  A module info
+ * request comes back with a payload only for modules the device actually has --
+ * the module id alone means there is no such module -- and the last four bytes
+ * of that payload are its slot count.
+ *
+ * Silence is not an answer: null means the device said nothing, which is not
+ * the same as "no such module", so callers carry on rather than refuse. */
+async function moduleInfo(moduleName, timeoutMs) {
+  if (!midi || family === null) return null;      // not connected: nothing to ask
+  const module = MODULES[moduleName].id;
+  let reply;
+  try {
+    reply = await send([0xF0, ...header(), MSG.USER_MODULE_INFO_REQUEST, module, 0xF7],
+                       timeoutMs || 2000,
+                       (d) => isSdk2(d) && d[6] === MSG.USER_MODULE_INFO);
+  } catch (e) {
+    return null;
+  }
+  const body = payloadOf(reply);
+  if (!body || body.id !== MSG.USER_MODULE_INFO) return null;
+  /* the module id on its own: the device has no such module.  This is an
+   * answer, and has to stay distinct from the null above, which is silence. */
+  if (body.payload.length <= 1) return { present: false, slots: 0 };
+  const host = Uint8Array.from(midiToHost(body.payload.slice(1)));
+  const slots = host.length >= 4
+    ? new DataView(host.buffer, host.byteOffset + host.length - 4).getUint32(0, true) : 0;
+  return { present: true, slots };
+}
+
+async function requireModule(moduleName) {
+  const info = await moduleInfo(moduleName);
+  if (info === null || info.present) return info;   // unknown, or there: carry on
+  const have = [];
+  for (const name of Object.keys(MODULES)) {
+    const other = await moduleInfo(name);
+    if (other && other.present) have.push(name);
+  }
+  fail(moduleName + ' is module ' + MODULES[moduleName].id +
+       ', and this device has no such module' +
+       (have.length ? ' -- it has ' + have.join(', ') + '.' : '.'));
+}
+
+async function slotStatus(moduleName, slot, timeoutMs) {
+  await inquireIfNeeded();
+  const module = MODULES[moduleName].id;
+  const reply = await send([0xF0, ...header(), MSG.USER_SLOT_STATUS_REQUEST, module, slot, 0xF7],
+                           timeoutMs || 2000,
+                           (d) => isSdk2(d) && d[6] === MSG.USER_SLOT_STATUS);
+  const body = payloadOf(reply);
+  if (!body || body.id !== MSG.USER_SLOT_STATUS) throw new Error('unexpected reply');
+  if (body.payload.length <= 2) return { present: false, header: null };
+  /* The three bytes before the data are the module id, the slot id and a
+   * dummy byte the message's own documentation admits is not documented. */
+  const host = Uint8Array.from(midiToHost(body.payload.slice(3)));
+  return { present: true, header: readUnitHeader(host) };
+}
+
+/* A unit file is an ARM ELF with the header in a .unit_header section; the
+ * device, when asked about a filled slot, answers with the header struct on
+ * its own.  Both readings are offered here and the one that makes sense wins:
+ * an ELF read as a header has a header_size of 0x464c457f, which is not a size
+ * any unit could have. */
+function readUnitHeader(bytes) {
+  const direct = parseUnitHeader(bytes, 0);
+  if (direct) return direct;
+  const section = sectionOffset(bytes, '.unit_header');
+  return section === -1 ? null : parseUnitHeader(bytes, section);
+}
+
+function parseUnitHeader(bytes, offset) {
+  if (offset < 0 || bytes.length - offset < UNIT_HEADER_SIZE) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset + offset, bytes.length - offset);
+  const headerSize = view.getUint32(0, true);
+  const target = view.getUint32(4, true) & 0xFFFF;
+  const platformId = target >> 8;
+  const moduleId = target & 0xFF;
+  /* A header declares its own size and the header is the smallest thing a
+   * unit file can be, so anything outside those bounds is some other data. */
+  if (headerSize < UNIT_HEADER_SIZE || headerSize % 4 !== 0 || headerSize > bytes.length - offset) return null;
+  if (!MODULE_BY_ID[moduleId] || !PLATFORMS[platformId]) return null;
+  const numParams = view.getUint32(0x34, true);
+  if (numParams > (headerSize - UNIT_HEADER_SIZE) / 32) return null;
+  return {
+    headerSize, target, moduleId, platformId,
+    api: view.getUint32(8, true),
+    devId: view.getUint32(12, true),
+    unitId: view.getUint32(16, true),
+    version: view.getUint32(20, true),
+    name: ascii(bytes.subarray(offset + 0x18, offset + 0x18 + 20)),
+    numParams,
+  };
+}
+
+/* Offset of a named section in a little-endian ELF32, or -1. */
+function sectionOffset(bytes, wanted) {
+  if (bytes.length < 0x34) return -1;
+  if (bytes[0] !== 0x7F || bytes[1] !== 0x45 || bytes[2] !== 0x4C || bytes[3] !== 0x46) return -1;
+  if (bytes[4] !== 1 || bytes[5] !== 1) return -1;             // ELF32, little-endian
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
+  const table = view.getUint32(0x20, true);
+  const entrySize = view.getUint16(0x2E, true);
+  const count = view.getUint16(0x30, true);
+  const names = view.getUint16(0x32, true);
+  if (!entrySize || table + count * entrySize > bytes.length || names >= count) return -1;
+
+  const strings = table + names * entrySize;
+  const stringsAt = view.getUint32(strings + 16, true);
+  const stringsEnd = stringsAt + view.getUint32(strings + 20, true);
+  if (stringsEnd > bytes.length) return -1;
+
+  for (let i = 0; i < count; i++) {
+    const entry = table + i * entrySize;
+    const nameAt = stringsAt + view.getUint32(entry, true);
+    if (nameAt >= stringsEnd) continue;
+    let name = '';
+    for (let c = nameAt; c < stringsEnd && bytes[c] !== 0; c++) name += String.fromCharCode(bytes[c]);
+    if (name === wanted) return view.getUint32(entry + 16, true);
+  }
+  return -1;
+}
+
+function describe(header) {
+  const platform = PLATFORMS[header.platformId] || hex(header.platformId, 2);
+  const module = MODULE_BY_ID[header.moduleId] || hex(header.moduleId, 2);
+  return header.name + '  [' + platform + ' ' + module +
+    ', dev ' + hex(header.devId, 8) + ' unit ' + hex(header.unitId, 8) +
+    ', v' + ((header.version >> 16) & 0xFF) + '.' + ((header.version >> 8) & 0xFF) + '.' + (header.version & 0xFF) +
+    /* the field already accounts for the param descriptors -- the device echoes
+     * back exactly this many bytes and the params are among them -- so adding
+     * numParams * 32 on top would count them twice */
+    ', ' + header.numParams + ' params, ' + header.headerSize + 'B header]';
+}
+
+/* ------------------------------------------------------------------ slots */
+
+async function scan() {
+  const moduleName = $('module').value;
+  const known = await requireModule(moduleName);
+  /* requireModule answers null for silence and for "not connected", and its
+   * question is answered by a device that is listening at all: silence means
+   * the slots cannot be read, and walking them would only repeat the same
+   * timeout once per slot and then report an empty device. */
+  if (known === null) {
+    log('Scan stopped: the device did not answer the ' + moduleName + ' question, so its slots ' +
+        'cannot be read. Check the MIDI in/out pair, then scan again.', 'err');
+    return;
+  }
+  const count = MODULES[moduleName].slots;
+  if (known.slots && known.slots !== count) {
+    log('note: the device reports ' + known.slots + ' ' + moduleName + ' slots, not ' + count, 'err');
+  }
+  $('slots').innerHTML = '';
+  const table = document.createElement('table');
+  const rows = [];
+  for (let slot = 0; slot < count; slot++) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td class="num">' + slot + '</td><td class="what empty">?</td><td class="act"></td>';
+    table.appendChild(tr);
+    rows.push(tr);
+  }
+  $('slots').appendChild(table);
+  log('Scanning ' + count + ' ' + moduleName + ' slots...');
+
+  let filled = 0;
+  let answered = 0;
+  let missed = 0;
+  let stopped = false;
+  for (let slot = 0; slot < count; slot++) {
+    const what = rows[slot].querySelector('.what');
+    try {
+      const status = await slotStatus(moduleName, slot);
+      missed = 0;
+      answered++;
+      if (status.present) {
+        what.textContent = status.header ? describe(status.header) : 'in use, no readable header';
+        what.className = status.header ? 'what' : 'what empty';
+        const button = document.createElement('button');
+        button.textContent = 'Clear';
+        button.onclick = () => clearSlot(moduleName, slot);
+        rows[slot].querySelector('.act').appendChild(button);
+        filled++;
+      } else {
+        what.textContent = 'empty';
+        what.className = 'what empty';
+      }
+    } catch (e) {
+      what.textContent = 'no reply';
+      what.className = 'what empty';
+      /* A device that has stopped answering will not start again three slots
+       * later, and asking all sixteen anyway spends a timeout on each and ends
+       * by reporting a device full of nothing. */
+      if (++missed >= 3) {
+        for (const row of rows.slice(slot + 1)) {
+          const rest = row.querySelector('.what');
+          rest.textContent = 'not asked';
+          rest.className = 'what empty';
+        }
+        log('Stopped at slot ' + slot + ': ' + missed + ' in a row did not answer, so the rest were ' +
+            'not asked. (' + e.message + ')', 'err');
+        stopped = true;
+        break;
+      }
+    }
+  }
+  /* "0 of 16 slots in use" reads as a healthy empty device and is exactly
+   * wrong when the reason is that nothing answered. */
+  if (!answered) {
+    log('Scan failed: not one slot answered, so this says nothing about the device.', 'err');
+    return;
+  }
+  if (stopped) {
+    log('Scan stopped early: the ' + answered + ' slots that did answer hold ' + filled + ' unit(s).', 'err');
+    return;
+  }
+  log('Scan done: ' + filled + ' of ' + count + ' slots in use.', 'ok');
+}
+
+async function clearSlot(moduleName, slot) {
+  await inquireIfNeeded();
+  try {
+    const reply = await send([0xF0, ...header(), MSG.CLEAR_USER_SLOT, MODULES[moduleName].id, slot, 0xF7],
+                             3000, isStatusReply);
+    const status = statusOf(reply);
+    if (status !== 0x23) throw new Error(STATUS[status] || hex(status, 2));
+    log('Cleared ' + moduleName + ' slot ' + slot + '.', 'ok');
+    await scan();
+  } catch (e) {
+    log('Clear failed: ' + e.message, 'err');
+  }
+}
+
+function statusOf(reply) {
+  const body = payloadOf(reply);
+  return body ? body.id : -1;
+}
+
+/* ---------------------------------------------------------------- install */
+
+async function install() {
+  if (!unitFile) fail('Choose a unit file first.');
+  await inquireIfNeeded();
+  const moduleName = $('module').value;
+  const module = MODULES[moduleName].id;
+  await requireModule(moduleName);
+  /* An emptied slot field is not slot 0: Number('') is 0, and uploading there
+   * would quietly overwrite whatever the device keeps in it. */
+  const chosen = $('slot') ? $('slot').value.trim() : '';
+  const slot = chosen === '' ? NaN : Number(chosen);
+
+  if (!Number.isInteger(slot) || slot < 0 || slot >= MODULES[moduleName].slots) {
+    fail('Slot "' + chosen + '" is outside ' + moduleName + '\'s 0..' + (MODULES[moduleName].slots - 1) + '.');
+  }
+  const target = unitFile.header;
+  if (target.moduleId !== module) {
+    const theirs = MODULE_BY_ID[target.moduleId] || hex(target.moduleId, 2);
+    const proceed = confirm('The file is a "' + theirs + '" unit but the module selected is "' + moduleName +
+                            '". It will be rejected by the device. Upload anyway?');
+    if (!proceed) return;
+  }
+
+  const bytes = unitFile.bytes;
+  const host = new Uint8Array(8 + bytes.length);
+  const view = new DataView(host.buffer);
+  view.setUint32(0, bytes.length, true);
+  view.setUint32(4, crc32(bytes), true);
+  host.set(bytes, 8);
+
+  const sequenceMax = Math.floor(host.length / MAX_HOST_DATA_SIZE);
+  log('Uploading ' + unitFile.name + ' (' + bytes.length + ' bytes, CRC ' + hex(view.getUint32(4, true), 8) +
+      ') to ' + moduleName + ' slot ' + slot + ' as ' + (sequenceMax + 1) + ' packet(s).');
+
+  for (let sequence = 0; sequence <= sequenceMax; sequence++) {
+    const start = sequence * MAX_HOST_DATA_SIZE;
+    const chunk = host.subarray(start, Math.min(start + MAX_HOST_DATA_SIZE, host.length));
+    const message = [0xF0, ...header(), MSG.USER_SLOT_DATA, module, slot, sequence, sequenceMax,
+                     ...hostToMidi(chunk), 0xF7];
+    let reply;
+    try {
+      reply = await send(message, 8000, isStatusReply);
+    } catch (e) {
+      log('Packet ' + sequence + '/' + sequenceMax + ' failed: ' + e.message, 'err');
+      return;
+    }
+    const status = statusOf(reply);
+    if (status !== 0x23) {
+      log('Packet ' + sequence + '/' + sequenceMax + ' rejected: ' + (STATUS[status] || hex(status, 2)), 'err');
+      return;
+    }
+    log('  packet ' + sequence + '/' + sequenceMax + ' (' + chunk.length + ' bytes) accepted.');
+  }
+  log('Installed ' + unitFile.name + ' into ' + moduleName + ' slot ' + slot + '.', 'ok');
+  try {
+    /* The device has just taken 29 KB and is still writing it away, so this
+     * read-back is given longer than a slot in a scan gets. */
+    const status = await slotStatus(moduleName, slot, 6000);
+    if (status.header) log('Device now reports: ' + describe(status.header), 'ok');
+    else log('The device did not report a readable header back for that slot.', 'err');
+  } catch (e) { /* the upload is the point; the read-back is a nicety */ }
+  /* The slot list on the page is what the upload is judged by, and it was
+   * drawn before this upload happened: leaving it alone makes a unit that the
+   * device has just confirmed look like it never went anywhere. */
+  await scan();
+}
+
+/* ------------------------------------------------------------------ files */
+
+function loadFile(file) {
+  file.arrayBuffer().then((buffer) => {
+    const bytes = new Uint8Array(buffer);
+    const header = readUnitHeader(bytes);
+    if (!header) {
+      log('No unit header in that file -- is it a .nts1mkiiunit or .nts3unit?', 'err');
+      return;
+    }
+    unitFile = { name: file.name, bytes, header };
+    $('fileinfo').textContent = describe(header);
+
+    /* Aim the module selector at what the file actually is, and offer the
+     * first free slot of that module. */
+    const moduleName = MODULE_BY_ID[header.moduleId];
+    if (moduleName && MODULES[moduleName]) $('module').value = moduleName;
+    $('install').disabled = false;
+    slotChooser(MODULES[$('module').value].slots);
+  });
+}
+
+function slotChooser(count) {
+  let chooser = $('slot');
+  if (!chooser) {
+    chooser = document.createElement('input');
+    chooser.type = 'number';
+    chooser.id = 'slot';
+    chooser.min = 0;
+    chooser.style.width = '4rem';
+    chooser.style.marginLeft = '.5rem';
+    const label = document.createElement('label');
+    label.textContent = 'Slot';
+    label.style.minWidth = '3rem';
+    $('install').parentNode.insertBefore(label, $('install'));
+    $('install').parentNode.insertBefore(chooser, $('install'));
+  }
+  chooser.max = count - 1;
+  if (chooser.value === '' || Number(chooser.value) >= count) chooser.value = 0;
+}
+
+/* ------------------------------------------------------------------ wiring */
+
+$('connect').onclick = () => connect().catch((e) => log(e.message, 'err'));
+/* Choosing a device moves the page onto it: which jack of a logue device
+ * carries the SysEx is not something the port names say, so pairing them up is
+ * the page's job, not the user's. */
+$('device').onchange = () => {
+  const device = devices[Number($('device').value)];
+  if (!device) return;
+  wanted = device.name;
+  current = null;                 // nothing is known about this one yet
+  family = null;
+  findDevice().catch((e) => log(e.message, 'err'));
+};
+$('info').onclick = () => inquire().catch((e) => log('Inquiry failed: ' + e.message, 'err'));
+$('scan').onclick = () => scan().catch((e) => log('Scan failed: ' + e.message, 'err'));
+$('install').onclick = () => install().catch((e) => log('Upload failed: ' + e.message, 'err'));
+$('pick').onclick = () => $('file').click();
+$('file').onchange = (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); };
+$('module').onchange = () => slotChooser(MODULES[$('module').value].slots);
+
+const drop = $('drop');
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = (e) => {
+  e.preventDefault();
+  drop.classList.remove('over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+};
+/* The dashed area reads as one target, so clicking anywhere in it opens the
+ * picker too -- except on the button, which already does that on its own. */
+drop.onclick = (e) => { if (e.target.id !== 'pick') $('file').click(); };
+
+log('Press "Connect MIDI", pick your device, then press "Inquire" to check it answers.');
+</script>
+</body>
+</html>

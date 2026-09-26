@@ -1,0 +1,24 @@
+{
+  "name": "RegrooveFX Player",
+  "short_name": "RFX Player",
+  "description": "Web-based audio effects processor with MOD/MED/AHX/SID playback",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "../replugged/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "../replugged/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["music", "entertainment", "multimedia", "utilities"]
+}

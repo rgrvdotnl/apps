@@ -1,0 +1,134 @@
+{
+  "synths": [
+    {
+      "id": "rg101",
+      "className": "RG101Synth",
+      "script": "../replugged/components/rg101-synth.js",
+      "category": "synthesizer",
+      "isModule": true
+    },
+    {
+      "id": "rgdx7",
+      "className": "RGDX7Synth",
+      "script": "../replugged/components/rgdx7-synth.js",
+      "category": "synthesizer",
+      "isModule": true
+    },
+    {
+      "id": "rgbirds",
+      "className": "RGBirdsSynth",
+      "script": "../replugged/components/rgbirds-synth.js",
+      "category": "synthesizer",
+      "isModule": true
+    },
+    {
+      "id": "rgfrogs",
+      "className": "RGFrogsSynth",
+      "script": "../replugged/components/rgfrogs-synth.js",
+      "category": "synthesizer",
+      "isModule": true
+    },
+    {
+      "id": "rgstorm",
+      "className": "RGStormSynth",
+      "script": "../replugged/components/rgstorm-synth.js",
+      "category": "synthesizer",
+      "isModule": true
+    },
+    {
+      "id": "rgresonate1",
+      "className": "RGResonate1Synth",
+      "script": "../replugged/external/rgresonate1-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rgtalker",
+      "className": "RGTalkerSynth",
+      "script": "../replugged/external/rgtalker-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rgahx",
+      "className": "RGAHXSynth",
+      "script": "../replugged/external/rgahxsynth-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rgsid",
+      "className": "RGSIDSynth",
+      "script": "../replugged/external/rgsid-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rg1piano",
+      "className": "RG1PianoSynth",
+      "script": "../replugged/external/rg1piano-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rgslicer",
+      "className": "RGSlicerSynth",
+      "script": "../replugged/external/rgslicer-synth.js",
+      "category": "sampler"
+    },
+    {
+      "id": "rgsfz",
+      "className": "RGSFZSynth",
+      "script": "../replugged/external/rgsfz-synth.js",
+      "category": "sampler"
+    },
+    {
+      "id": "rvkeys",
+      "className": "RVKeysSynth",
+      "script": "../replugged/external/rvkeys-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rvbass",
+      "className": "RVBassSynth",
+      "script": "../replugged/external/rvbass-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rgwshape",
+      "className": "RGWShapeSynth",
+      "script": "../replugged/external/rgwshape-synth.js",
+      "category": "synthesizer"
+    },
+    {
+      "id": "rghakkuh",
+      "className": "RGHakkuhSynth",
+      "script": "../replugged/components/rghakkuh-synth.js",
+      "category": "drum",
+      "isModule": true
+    },
+    {
+      "id": "rg909",
+      "className": "RG909Synth",
+      "script": "../replugged/components/rg909-synth.js",
+      "category": "drum",
+      "isModule": true
+    },
+    {
+      "id": "rd404",
+      "className": "RD404Synth",
+      "script": "../replugged/components/rd404-synth.js",
+      "category": "drum",
+      "isModule": true
+    },
+    {
+      "id": "rgahxdrum",
+      "className": "RGAHXDrumSynth",
+      "script": "../replugged/components/rgahx-drum-synth.js",
+      "category": "drum",
+      "isModule": true
+    },
+    {
+      "id": "rd1drum",
+      "className": "RD1DrumSynth",
+      "script": "../replugged/components/rd1-drum-synth.js",
+      "category": "drum",
+      "isModule": true
+    }
+  ]
+}
