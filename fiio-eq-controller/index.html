@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIIO/SNOWSKY EQ Controller</title>
+    <meta name="description" content="WebHID controller for the FiiO SNOWSKY TINY A USB DAC with live 10-band PEQ">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎚️</text></svg>">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="top-banner">
+        <div class="banner-title">FIIO/SNOWSKY EQ CONTROLLER</div>
+        <div class="connection-indicator" id="connectionIndicator">
+            <span class="indicator-dot"></span>
+            <span class="indicator-text">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <!-- ============ Connect (shown until a device is attached) ============ -->
+        <div class="connect-prompt" id="connectPrompt">
+            <button id="connectBtn" class="connect-button">Connect</button>
+            <p class="hint">Plug in the SNOWSKY TINY A, then pick it in the browser dialog.</p>
+            <p class="connect-error" id="connectError"></p>
+        </div>
+
+        <!-- ============ EQ ============ -->
+        <div class="section section-wide device-ui">
+            <div class="section-title">
+                <span id="eqTitle">Parametric EQ</span>
+                <span class="badge" id="dirtyBadge" style="display:none">Unsaved</span>
+                <span class="view-toggle">
+                    <button id="viewParametric" class="view-tab">10-Band</button>
+                    <button id="viewTone" class="view-tab">Tone</button>
+                </span>
+            </div>
+
+            <div class="eq-toolbar">
+                <label class="field">Preset
+                    <select id="presetSelect" class="needs-device"></select>
+                </label>
+
+                <label class="field">Global Gain
+                    <span class="gain-row">
+                        <input type="range" id="globalGain" class="needs-device" min="-12" max="12" step="0.5" value="0">
+                        <span class="gain-value"><span id="globalGainValue">0.0</span> dB</span>
+                    </span>
+                </label>
+
+                <label class="field switch-field">EQ Enabled
+                    <input type="checkbox" id="eqSwitch" class="needs-device" checked>
+                </label>
+
+                <div class="toolbar-actions">
+                    <button id="flatBtn" class="needs-device">Flatten</button>
+                    <button id="syncBtn" class="needs-device">Read from Device</button>
+                </div>
+            </div>
+
+            <div class="eq-bands" id="eqBands"></div>
+
+            <div class="eq-scale">
+                <span>+12</span><span>0</span><span>-12</span>
+            </div>
+
+            <!-- ============ Tone: the same ten bands, four knobs ============ -->
+            <div class="tone-view" id="toneView">
+                <div class="knob-row">
+                    <div class="knob-cell">
+                        <tone-knob id="toneGain" label="Gain" min="-12" max="12" value="0"></tone-knob>
+                        <button class="kill-btn" data-kill="gain">Mute</button>
+                    </div>
+                    <div class="knob-cell">
+                        <tone-knob id="toneLow" label="Low" min="-12" max="12" value="0"></tone-knob>
+                        <button class="kill-btn" data-kill="low">Kill</button>
+                    </div>
+                    <div class="knob-cell">
+                        <tone-knob id="toneMid" label="Mid" min="-12" max="12" value="0"></tone-knob>
+                        <button class="kill-btn" data-kill="mid">Kill</button>
+                    </div>
+                    <div class="knob-cell">
+                        <tone-knob id="toneHigh" label="High" min="-12" max="12" value="0"></tone-knob>
+                        <button class="kill-btn" data-kill="high">Kill</button>
+                    </div>
+                </div>
+
+                <!-- The shape the knobs are applying, one column per band. -->
+                <div class="tone-readout" id="toneReadout"></div>
+
+                <!-- A boost has to fit somewhere. This says what the curve peaks at
+                     and, when that peak plus GAIN would go past full scale, offers to
+                     pull GAIN down. It never moves the knob on its own. -->
+                <div class="tone-headroom" id="toneHeadroom">
+                    <span id="headroomText"></span>
+                    <button id="headroomFix" class="needs-device">Pull GAIN down</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ Profile ============ -->
+        <div class="section device-ui">
+            <div class="section-title">Profile</div>
+
+            <label class="field">EQ Name <span class="field-note">8 characters, stored upper-case</span>
+                <input type="text" id="nameInput" class="needs-device" maxlength="8" placeholder="My Profile" value="Custom">
+            </label>
+
+            <label class="field">Save to
+                <select id="slotSelect" class="needs-device">
+                    <option value="160">USER 1</option>
+                    <option value="161">USER 2</option>
+                    <option value="162">USER 3</option>
+                </select>
+            </label>
+
+            <div class="button-row">
+                <button id="saveBtn" class="primary needs-device">Save to Device</button>
+            </div>
+            <div class="button-row">
+                <button id="exportBtn" class="needs-device">Export XML</button>
+                <button id="importBtn" class="needs-device">Import XML</button>
+                <input type="file" id="importFile" accept=".xml" style="display: none;">
+            </div>
+            <div class="button-row">
+                <button id="fixFreqsBtn" class="needs-device" title="Writes the ten standard band centres back">Restore 10-Band Frequencies</button>
+            </div>
+
+            <p class="hint">
+                The TINY A's PEQ is ten bands at fixed centres — 32, 64, 125, 250, 500&nbsp;Hz,
+                1, 2, 4, 8 and 16&nbsp;kHz. A profile exported from another device can carry other
+                frequencies, and a band that has wandered out of its slot is a filter in the wrong
+                place: the knob shapes the right slot, but that slot does not sound like 32&nbsp;Hz
+                any more. <strong>Restore</strong> puts the ten centres back and leaves every gain,
+                Q and type alone.
+            </p>
+
+            <p class="hint" id="saveTarget"></p>
+
+            <p class="hint">
+                Pick the slot <em>before</em> pressing Save — saving overwrites whatever is
+                already stored there. The TINY A has no separate save command, so writing
+                into the selected USER slot is what stores the curve.
+                Importing applies a profile immediately — you can also drag an
+                <code>.xml</code> file straight onto this page.
+            </p>
+        </div>
+
+        <!-- ============ Status ============ -->
+        <div class="section device-ui">
+            <div class="section-title">Status</div>
+
+            <div class="status-line" id="logLine">Ready.</div>
+
+            <button id="logToggle" class="link-button">Details ▾</button>
+            <pre class="log" id="log"></pre>
+
+            <p class="hint">
+                Transport: WebHID (report&nbsp;ID&nbsp;7). The TINY A exposes its control
+                interface as HID class, which WebUSB refuses to claim — WebHID is the
+                only browser transport that can talk to it.
+            </p>
+        </div>
+
+    </div>
+
+    <script src="protocol.js"></script>
+    <script src="knobs.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

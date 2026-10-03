@@ -1,0 +1,592 @@
+/* ============================================================
+   SNOWSKY TINY A CONTROLLER - STYLES
+   ============================================================ */
+
+:root {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #2a2a2a;
+    --accent: #CF1A37;
+    --accent-dim: #a01528;
+    --blue: #0066FF;
+    --green: #00FF00;
+    --text-primary: #ffffff;
+    --text-secondary: #aaaaaa;
+    --border: #333333;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+}
+
+/* ---------- Top banner ---------- */
+
+.top-banner {
+    background: var(--accent);
+    padding: 0 20px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.banner-title {
+    font-size: 1.1em;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    flex: 1;
+    line-height: 1;
+}
+
+.connection-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.indicator-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #666;
+}
+
+.connection-indicator.connected .indicator-dot { background: var(--green); }
+.indicator-text { color: #aaa; white-space: nowrap; }
+.connection-indicator.connected .indicator-text { color: var(--green); }
+
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Layout ---------- */
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+
+.section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+}
+
+.section-wide { grid-column: 1 / -1; }
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--blue);
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 1px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 5px;
+    font-weight: bold;
+}
+
+/* ---------- View toggle ---------- */
+
+.view-toggle {
+    margin-left: auto;
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.view-tab {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 3px 12px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+}
+
+.view-tab:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.view-tab.active,
+.view-tab.active:hover { background: var(--blue); color: #fff; }
+
+.badge {
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+/* ---------- Controls ---------- */
+
+button, select, input[type="number"], input[type="text"] {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    font-size: 0.85em;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+}
+
+input[type="text"] { cursor: text; text-transform: none; }
+
+button:hover, select:hover { border-color: #4a4a4a; background: #3a3a3a; }
+button:active { background: var(--blue); }
+
+button.primary { background: var(--accent); border-color: var(--accent); }
+button.primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+button.attention { box-shadow: 0 0 0 2px rgba(207, 26, 55, 0.5); }
+
+.link-button {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 0;
+    margin-top: 12px;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.link-button:hover { background: none; color: var(--text-primary); }
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.field select, .field input[type="text"] { width: 100%; }
+
+.switch-field { flex-direction: row; align-items: center; justify-content: space-between; }
+.switch-field input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+
+.button-row { display: flex; gap: 10px; margin-top: 12px; }
+.button-row button { flex: 1; }
+
+.hint {
+    font-size: 11px;
+    color: #666;
+    line-height: 1.6;
+    margin-top: 15px;
+}
+
+/* ---------- EQ toolbar ---------- */
+
+.eq-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr auto;
+    gap: 15px;
+    align-items: end;
+    margin-bottom: 25px;
+}
+
+.gain-row { display: flex; align-items: center; gap: 10px; }
+.gain-row input[type="range"] { flex: 1; }
+
+.gain-value {
+    font-size: 11px;
+    color: var(--blue);
+    font-weight: bold;
+    white-space: nowrap;
+    /* Fixed width + tabular figures: "-12.0" must occupy exactly as much room
+       as "0.0", or the toolbar reflows and the whole panel shifts. */
+    width: 62px;
+    box-sizing: border-box;
+    font-variant-numeric: tabular-nums;
+}
+
+.toolbar-actions { display: flex; gap: 10px; }
+
+/* ---------- EQ bands ---------- */
+
+.eq-bands {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 10px;
+}
+
+.band {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    background: #141414;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 6px;
+}
+
+.band-readout {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--blue);
+    min-height: 16px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.band-readout small {
+    font-size: 8px;
+    color: #666;
+    margin-left: 2px;
+    font-weight: normal;
+}
+
+.eq-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 6px;
+    height: 150px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.eq-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--accent);
+    border: 1px solid #7d1022;
+    cursor: grab;
+}
+
+.eq-slider::-moz-range-thumb {
+    width: 22px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--accent);
+    border: 1px solid #7d1022;
+    cursor: grab;
+}
+
+.band-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 8px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    width: 100%;
+    align-items: center;
+}
+
+.band-field input, .band-field select {
+    width: 100%;
+    padding: 4px 2px;
+    font-size: 10px;
+    letter-spacing: 0;
+    text-align: center;
+}
+
+.band-field input[type="number"] { cursor: text; }
+
+.eq-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: #444;
+    margin-top: 10px;
+    padding: 0 4px;
+    letter-spacing: 1px;
+}
+
+/* ---------- Tone view ----------
+   Two views over the same ten bands. The section is a flex column so the band
+   sliders can sit *below* the knobs when inspecting — they are the same ten
+   sliders either way, just revealed. */
+
+.section-wide { display: flex; flex-direction: column; }
+
+.eq-toolbar { order: 1; }
+.tone-view  { order: 2; }
+.eq-bands   { order: 3; }
+.eq-scale   { order: 4; }
+
+body:not(.mode-tone) .tone-view { display: none; }
+body.mode-tone .eq-bands,
+body.mode-tone .eq-scale { display: none; }
+
+.knob-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 24px;
+    align-items: start;
+    padding: 22px 0 6px;
+}
+
+.knob-row tone-knob { --knob-size: 140px; }
+
+.knob-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+}
+
+.kill-btn {
+    width: 100%;
+    max-width: 140px;
+    padding: 9px 0;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 3px;
+}
+
+.kill-btn:hover { border-color: var(--accent); color: #fff; background: #3a3a3a; }
+
+.kill-btn.active,
+.kill-btn.active:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 0 2px rgba(207, 26, 55, 0.35);
+}
+
+/* The response strip: one column per band, showing the dB the knobs are adding
+   there. The bar is the shape; the label under it is that band's frequency. */
+.tone-readout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-top: 22px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.rsp-knobs { display: flex; gap: 22px; color: #666; }
+.rsp-knobs b { color: var(--blue); font-size: 12px; }
+
+.rsp-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    width: 100%;
+    max-width: 620px;
+}
+
+.rsp-col {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.rsp-track {
+    width: 100%;
+    height: 58px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    border-bottom: 1px solid var(--border);
+}
+
+.rsp-bar {
+    width: 70%;
+    max-width: 16px;
+    min-height: 2px;
+    background: var(--bg-tertiary);
+    border-radius: 2px 2px 0 0;
+}
+
+.rsp-col.up .rsp-bar { background: var(--blue); }
+.rsp-col.down .rsp-bar { background: var(--accent); }
+
+.rsp-db { font-size: 10px; color: #555; }
+.rsp-col.up .rsp-db { color: var(--blue); font-weight: bold; }
+.rsp-col.down .rsp-db { color: var(--accent); font-weight: bold; }
+
+.rsp-freq { font-size: 8px; color: #444; letter-spacing: 0; }
+
+/* A band whose device frequency is not its slot's. The shape is still right —
+   the shares go by position — but the filter is sitting somewhere else, so the
+   sound will not match the bars until the frequencies are restored. */
+.rsp-col.drifted .rsp-freq { color: var(--accent); font-weight: bold; }
+
+.rsp-caption { font-size: 9px; color: #444; letter-spacing: 1px; }
+
+/* The headroom line. Calm while the curve fits, accent when it does not, and a
+   button that only appears when there is something to fix. */
+.tone-headroom {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 12px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #666;
+    font-variant-numeric: tabular-nums;
+    min-height: 26px;
+}
+
+.tone-headroom.clipping { color: var(--accent); font-weight: bold; }
+
+.tone-headroom button {
+    padding: 4px 10px;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+/* ---------- Connect gate ----------
+   Nothing but the Connect button exists until a device is attached. */
+
+body.is-connected .connect-prompt { display: none; }
+
+body:not(.is-connected) .device-ui { display: none !important; }
+
+.connect-prompt {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+}
+
+.connect-button {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+    font-size: 1em;
+    font-weight: bold;
+    padding: 14px 60px;
+    letter-spacing: 2px;
+}
+
+.connect-button:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+.connect-button:active { background: var(--accent-dim); }
+
+.connect-prompt .hint { margin-top: 20px; }
+
+.connect-error {
+    display: none;
+    margin-top: 20px;
+    color: var(--accent);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+#saveTarget { margin-top: 12px; color: #888; }
+
+.field-note {
+    text-transform: none;
+    letter-spacing: 0;
+    color: #555;
+    font-size: 10px;
+}
+
+/* ---------- Drag & drop ---------- */
+
+body.dragging::after {
+    content: 'Drop a FiiO .xml profile to apply it';
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 10, 10, 0.85);
+    border: 3px dashed var(--accent);
+    color: #fff;
+    font-size: 16px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    z-index: 200;
+    pointer-events: none;
+}
+
+/* ---------- Status ---------- */
+
+.status-line {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    min-height: 18px;
+}
+
+body.error .status-line { color: var(--accent); }
+
+.log {
+    display: none;
+    margin-top: 10px;
+    padding: 10px;
+    background: #0d0d0d;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 10px;
+    color: #666;
+    max-height: 180px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.log.open { display: block; }
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1100px) {
+    .eq-toolbar { grid-template-columns: 1fr 1fr; }
+    .eq-bands { grid-template-columns: repeat(5, 1fr); }
+    .knob-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+}
+
+@media (max-width: 900px) {
+    .container { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+    .connection-indicator { display: none; }
+    .eq-bands { grid-template-columns: repeat(3, 1fr); }
+    .eq-slider { height: 110px; }
+    .knob-row { gap: 18px; }
+    .knob-row tone-knob { --knob-size: 104px; }
+}
