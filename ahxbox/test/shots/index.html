@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AHXBox screens</title>
+<style>
+ body { margin:0; padding:24px; background:#111; color:#e6e6e6;
+        font:14px/1.5 ui-monospace,Menlo,Consolas,monospace; }
+ h1 { font-size:16px; font-weight:600; margin:0 0 4px; }
+ p  { color:#b3b3b3; margin:0 0 20px; }
+ figure { margin:0; }
+ img { width:360px; image-rendering:pixelated; border:1px solid #555; display:block; }
+ figcaption { color:#b3b3b3; padding-top:6px; }
+ .grid { display:flex; flex-wrap:wrap; gap:20px; }
+</style>
+<h1>AHXBox screens</h1>
+<p>240 x 240, drawn by firmware/ax_ui.c with the platform renderer, on the host (tests/ax_render.c).
+Shown at 1.5x.</p>
+<div class="grid">
+<figure><img src="pattern.png" alt="pattern"><figcaption>pattern</figcaption></figure>
+<figure><img src="playing.png" alt="playing"><figcaption>playing</figcaption></figure>
+<figure><img src="status.png" alt="status"><figcaption>status</figcaption></figure>
+</div>
