@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ReGINE PLConv - convert a Prologue, minilogue xd or NTS-1 v1 unit to the NTS-1 mkII, in the browser">
+<meta name="theme-color" content="#CF1A37">
+<title>Logue Unit Convert (PLConv)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="top-banner">
+  <div class="banner-title">Logue Unit Convert - ReGINE PL Conv</div>
+</div>
+
+<div class="container">
+  <p class="sub">
+    Convert a Prologue, minilogue xd or NTS-1 unit to the <b>NTS-1 mkII</b>.
+    Everything happens in your browser; nothing is uploaded.
+  </p>
+
+  <div class="section">
+    <div class="section-title">Unit</div>
+    <div class="file-upload-area" id="drop">
+      <div class="upload-prompt">
+        <div class="icon">&#9834;</div>
+        <div class="lead">Drop a v1 unit here</div>
+        <div class="hint"><code>.prlgunit</code>, <code>.mnlgxdunit</code> or <code>.ntkdigunit</code>. Or click to choose one</div>
+      </div>
+    </div>
+    <input type="file" id="pick" accept=".prlgunit,.mnlgxdunit,.ntkdigunit,.zip" hidden>
+    <div class="device-info" id="about"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Convert</div>
+    <div class="button-row">
+      <button id="go" class="action-button" disabled>Convert</button>
+      <button id="download" class="secondary" disabled>Download</button>
+    </div>
+    <p class="sub" style="margin-bottom:0">
+      The result is <code>&lt;name&gt;.nts1mkiiunit</code>.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Report</div>
+    <div id="log">Waiting for a unit.</div>
+  </div>
+
+  <div class="section">
+    <p>Support development by becoming a <a href="https://patreon.rgrv.nl/">Patron</a> or buying me a <a href="https://kofi.rgrv.nl">Ko-fi</a></p>
+    <p>Issues should be reported here: <a href="https://github.com/rgrvmusic/support/issues">rgrvmusic/support</a></p>
+  </div>
+
+  <details class="advanced">
+    <summary>Advanced</summary>
+
+    <div class="section">
+      <div class="section-title">Check the analysis</div>
+      <div class="file-upload-area" id="edrop">
+        <div class="upload-prompt">
+          <div class="icon">&#9636;</div>
+          <div class="lead">Drop the <code>.elf</code> the unit was linked from</div>
+          <div class="hint">or click to choose one. Skip it and nothing below changes</div>
+        </div>
+      </div>
+      <input type="file" id="epick" accept=".elf,.o,.axf" hidden>
+      <div class="device-info" id="eabout"></div>
+      <p class="sub" style="margin-bottom:0">
+        The build artifact, which you will not normally have. Given it, the
+        analysis is also checked against the unit's own code.
+      </p>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Relocation listing</div>
+      <label class="option"><input type="checkbox" id="plan"> <code>--plan</code></label>
+      <p class="sub" style="margin-bottom:0">
+        List every word the conversion moves, not just the totals.
+      </p>
+    </div>
+  </details>
+</div>
+
+<script src="plconv.js"></script>
+<script src="plcov.js"></script>
+<script>
+"use strict";
+
+let mod = null;
+let modcov = null;
+let stdout = "";
+let stderr = "";
+
+const logEl = document.getElementById("log");
+const aboutEl = document.getElementById("about");
+const dropEl = document.getElementById("drop");
+const pickEl = document.getElementById("pick");
+const goEl = document.getElementById("go");
+const dlEl = document.getElementById("download");
+const planEl = document.getElementById("plan");
+const eaboutEl = document.getElementById("eabout");
+const edropEl = document.getElementById("edrop");
+const epickEl = document.getElementById("epick");
+
+let unit = null;
+let elf = null;
+
+let result = null;
+
+function render(lines) {
+  logEl.innerHTML = lines.map(([cls, text]) => {
+    const span = document.createElement("span");
+    if (cls) span.className = cls;
+    span.textContent = text + "\n";
+    return span.outerHTML;
+  }).join("");
+}
+
+function say(text, cls) { render([[cls || null, text]]); }
+
+function showReport() {
+  const lines = [];
+  stdout.split("\n").filter((l) => l !== "").forEach((l) => lines.push([null, l]));
+  if (stderr.trim() !== "") {
+    lines.push([null, ""]);
+    stderr.split("\n").filter((l) => l !== "").forEach((l) => lines.push(["err", l]));
+  }
+  if (!lines.length) lines.push([null, "(no output)"]);
+  render(lines);
+}
+
+
+async function loadUnit(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  unit = { name: file.name, bytes };
+  const kind = describe(bytes);
+  aboutEl.textContent = kind;
+  goEl.disabled = false;
+  say("Loaded " + file.name + " (" + bytes.length + " bytes).\n" + kind);
+}
+
+function describe(bytes) {
+  if (bytes.length >= 4 && bytes[0] === 0x7f && bytes[1] === 0x45 &&
+      bytes[2] === 0x4c && bytes[3] === 0x46) {
+    return "An ELF: a mkII, NTS-3 or drumlogue unit. This page carries the "
+         + "other direction, so it will be refused.";
+  }
+  if (!(bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b)) {
+    return "Not a logue unit. A v1 unit is a zip. It will be refused.";
+  }
+  return "";
+}
+
+async function loadElf(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  elf = { name: file.name, bytes };
+  const isElf = bytes.length >= 4 && bytes[0] === 0x7f && bytes[1] === 0x45 &&
+                bytes[2] === 0x4c && bytes[3] === 0x46;
+  eaboutEl.textContent = isElf
+    ? "An ELF32. Whether it is the one this unit was built from is checked on "
+    + "the next run, and refused if not."
+    : "Not an ELF, so it will be refused. A .elf from a logue firmware build is "
+    + "what this wants.";
+  say("Loaded " + file.name + " (" + bytes.length + " bytes) as the unit's ELF. "
+      + "The next run will include the coverage check.");
+}
+
+function clearElf() {
+  elf = null;
+  eaboutEl.textContent = "No ELF: the coverage check will be skipped.";
+  if (epickEl.value !== undefined) epickEl.value = "";
+}
+
+
+const DEST_EXT = ".nts1mkiiunit";
+
+function outputName(inputName) {
+  const dot = inputName.lastIndexOf(".");
+  const stem = dot > 0 ? inputName.slice(0, dot) : inputName;
+  return stem + DEST_EXT;
+}
+
+function convert() {
+  stdout = "";
+  stderr = "";
+  dlEl.disabled = true;
+  result = null;
+
+  for (const f of mod.FS.readdir("/")) {
+    const p = "/" + f;
+    let st;
+    try { st = mod.FS.stat(p); } catch (e) { continue; }
+    if (mod.FS.isFile(st.mode)) mod.FS.unlink(p);
+  }
+
+  const inPath = "/" + unit.name;
+  const outName = outputName(unit.name);
+  const outPath = "/" + outName;
+  mod.FS.writeFile(inPath, unit.bytes);
+
+  const argv = [inPath];
+  if (planEl.checked) argv.push("--plan");
+  argv.push("-o", outPath);
+
+  let rc = mod.callMain(argv);
+  const report = stdout;
+  const reportErr = stderr;
+
+  let covRc = null;
+  let covText = "";
+
+  if (elf !== null) {
+    stdout = "";
+    stderr = "";
+    mod.callMain([inPath, "--coverage", "--check"]);
+    const map = stdout;
+
+    for (const f of modcov.FS.readdir("/")) {
+      const p = "/" + f;
+      let st;
+      try { st = modcov.FS.stat(p); } catch (e) { continue; }
+      if (modcov.FS.isFile(st.mode)) modcov.FS.unlink(p);
+    }
+    modcov.FS.writeFile(inPath, unit.bytes);
+    modcov.FS.writeFile("/unit.elf", elf.bytes);
+    modcov.FS.writeFile("/map.txt", map);
+
+    stdout = "";
+    stderr = "";
+    covRc = modcov.callMain([inPath, "/unit.elf", "--map", "/map.txt"]);
+    covText = stdout;
+    const covErr = stderr;
+    if (covErr.trim() !== "") covText += "\n" + covErr;
+  }
+
+  stdout = report + (covText === "" ? "" : "\n" + covText);
+  stderr = reportErr;
+  showReport();
+
+  const verdict = document.createElement("span");
+  verdict.className = rc === 0 ? "ok" : "err";
+  verdict.textContent = "\nexit " + rc +
+    (rc === 0 ? ": converted" :
+     rc === 1 ? ": refused, for the reason above" : ": usage error");
+
+  if (covRc !== null) {
+    const cv = document.createElement("span");
+    cv.className = covRc === 0 ? "ok" : "err";
+    cv.textContent = "\ncov exit " + covRc +
+      (covRc === 0 ? ": the analysis covered the code and nothing else" :
+       covRc === 1 ? ": the coverage check disagrees, for the reason above" :
+                     ": usage error");
+    logEl.appendChild(cv);
+  }
+
+  logEl.appendChild(verdict);
+  logEl.scrollTop = logEl.scrollHeight;
+
+  if (rc === 0 && mod.FS.analyzePath(outPath).exists) {
+    result = { name: outName, bytes: new Uint8Array(mod.FS.readFile(outPath)) };
+    dlEl.disabled = false;
+  }
+}
+
+function download() {
+  if (!result) return;
+  const url = URL.createObjectURL(new Blob([result.bytes], { type: "application/octet-stream" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = result.name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+dropEl.addEventListener("click", () => pickEl.click());
+pickEl.addEventListener("change", () => { if (pickEl.files[0]) loadUnit(pickEl.files[0]); });
+dropEl.addEventListener("dragover", (e) => { e.preventDefault(); dropEl.classList.add("over"); });
+dropEl.addEventListener("dragleave", () => dropEl.classList.remove("over"));
+dropEl.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropEl.classList.remove("over");
+  if (e.dataTransfer.files[0]) loadUnit(e.dataTransfer.files[0]);
+});
+goEl.addEventListener("click", convert);
+dlEl.addEventListener("click", download);
+
+edropEl.addEventListener("click", () => epickEl.click());
+epickEl.addEventListener("change", () => { if (epickEl.files[0]) loadElf(epickEl.files[0]); });
+edropEl.addEventListener("dragover", (e) => { e.preventDefault(); edropEl.classList.add("over"); });
+edropEl.addEventListener("dragleave", () => edropEl.classList.remove("over"));
+edropEl.addEventListener("drop", (e) => {
+  e.preventDefault();
+  edropEl.classList.remove("over");
+  if (e.dataTransfer.files[0]) loadElf(e.dataTransfer.files[0]);
+});
+epickEl.addEventListener("change", () => {
+  if (epickEl.files.length === 0) clearElf();
+});
+
+const ready = [];
+function started(what) {
+  ready.push(what);
+  if (ready.length === 2) {
+    say("Ready. Drop a v1 unit to begin.");
+  } else if (ready[0] === "plcov") {
+    say("Starting…");
+  }
+}
+
+createPlconv({
+  print: (s) => { stdout += s + "\n"; },
+  printErr: (s) => { stderr += s + "\n"; },
+}).then((m) => {
+  mod = m;
+  started("plconv");
+}).catch((e) => {
+  say("Could not start plconv: " + e + "\n" +
+      "If this page was opened from disk, check that plconv.js sits beside it " +
+      "and that the browser supports WebAssembly.", "err");
+});
+
+createPlcov({
+  print: (s) => { stdout += s + "\n"; },
+  printErr: (s) => { stderr += s + "\n"; },
+}).then((m) => {
+  modcov = m;
+  started("plcov");
+}).catch((e) => {
+  say("Could not start plcov: " + e + "\n" +
+      "plconv still works; only the coverage check is missing, and it needs " +
+      "plcov.js beside this page.", "err");
+});
+</script>
+</body>
+</html>
