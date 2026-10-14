@@ -1,0 +1,11 @@
+[
+  {"slug":"analog","name":"FLUYT ANALOG","module":"fluyt-analog-synth.js"},
+  {"slug":"trio","name":"FLUYT TRIO","module":"fluyt-trio-synth.js"},
+  {"slug":"phase","name":"FLUYT PHASE","module":"fluyt-phase-synth.js"},
+  {"slug":"lofi","name":"FLUYT LOFI","module":"fluyt-lofi-synth.js"},
+  {"slug":"wheel","name":"FLUYT WHEEL","module":"fluyt-wheel-synth.js"},
+  {"slug":"noise","name":"FLUYT NOISE","module":"fluyt-noise-synth.js"},
+  {"slug":"formant","name":"FLUYT FORMANT","module":"fluyt-formant-synth.js"},
+  {"slug":"drum","name":"FLUYT DRUM","module":"fluyt-drum-synth.js"},
+  {"slug":"fm6","name":"FLUYT FM6","module":"fluyt-fm6-synth.js"}
+]
