@@ -67,12 +67,6 @@ dd { margin: 0; }
 </style>
 
 <h1>AHXBOX</h1>
-<p class="sub">The FM-1's own screen, drawn by the firmware's own code (<code>firmware/ax_ui.c</code>)
-over the platform's renderer, with a real module decoded through ahx-core. Everything on the panel
-is under the mouse and the keyboard, and it plays: the module is mixed by the same call the device's
-interrupt makes, on this page's audio callback, which is also what advances the transport, so the
-playhead on the screen and the samples are one pass. Click once anywhere (a browser will not open an
-audio device before a gesture) and then PLAY.</p>
 
 <div class="device">
   <div class="screen"><canvas id="lcd" width="480" height="480"></canvas></div>
