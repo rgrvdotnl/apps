@@ -208,19 +208,3 @@ details.advanced .section { margin-top: 8px; }
 .field { flex-direction: column; align-items: stretch; }
 .field > label { min-width: 0; }
 }
-
-a:link,
-a:visited {
-color: var(--accent);
-}
-
-a:hover,
-a:focus {
-color: var(--accent);
-text-decoration: underline;
-}
-
-a:active {
-color: var(--accent-dim);
-}
-

@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="ReGINE PLConv - convert a Prologue, minilogue xd or NTS-1 v1 unit to the NTS-1 mkII, in the browser">
+<meta name="description" content="PLConv - convert a Prologue, minilogue xd or NTS-1 v1 unit to the NTS-1 mkII, in the browser">
 <meta name="theme-color" content="#CF1A37">
-<title>Logue Unit Convert (PLConv)</title>
+<title>PLConv</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <div class="top-banner">
-  <div class="banner-title">Logue Unit Convert - ReGINE PL Conv</div>
+  <div class="banner-title">PLConv</div>
 </div>
 
 <div class="container">
@@ -49,11 +49,14 @@
     <div id="log">Waiting for a unit.</div>
   </div>
 
-  <div class="section">
-    <p>Support development by becoming a <a href="https://patreon.rgrv.nl/">Patron</a> or buying me a <a href="https://kofi.rgrv.nl">Ko-fi</a></p>
-    <p>Issues should be reported here: <a href="https://github.com/rgrvmusic/support/issues">rgrvmusic/support</a></p>
-  </div>
+  <p class="sub">
+    <b>A converted unit is not a tested one.</b> A download means the unit was
+    reassembled correctly, with every reference it was built with found and
+    placed. Whether it <i>sounds</i> right can only be settled by playing it on
+    a device, so try the result before you rely on it.
+  </p>
 
+  
   <details class="advanced">
     <summary>Advanced</summary>
 
@@ -151,7 +154,8 @@ function describe(bytes) {
   if (!(bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b)) {
     return "Not a logue unit. A v1 unit is a zip. It will be refused.";
   }
-  return "";
+  return "A zip, which is what a v1 unit is. Whether it is one, and whether it "
+       + "can be carried, is for plconv to say.";
 }
 
 async function loadElf(file) {
