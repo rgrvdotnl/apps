@@ -6,8 +6,10 @@
     <title>Regroove | RGRV - Phrase Arpeggiator</title>
     <meta name="description" content="Turn a phrase into a live arpeggio or chord sequence, straight to WebMIDI.">
     <meta name="theme-color" content="#CF1A37">
-    <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <link rel="stylesheet" href="./style.css">
 </head>
 <body>
     <header class="top-banner">
@@ -47,6 +49,7 @@
                 <div class="transport">
                     <button type="button" id="playBtn" class="primary" disabled>▶ Regroove</button>
                     <button type="button" id="stopBtn" class="transport-button" disabled>■ Stop</button>
+                    <button type="button" id="downloadBtn" class="transport-button" disabled>Download .mid</button>
                     <label class="switch">
                         <input type="checkbox" id="loopToggle" checked>
                         <span>Loop</span>
@@ -59,7 +62,7 @@
 
                 <div class="lane-head">
                     <span>16-step lane</span>
-                    <span id="playheadLabel">—</span>
+                    <span id="playheadLabel">-</span>
                 </div>
                 <div class="step-grid" id="stepGrid" aria-hidden="true"></div>
 
@@ -163,7 +166,7 @@
                     <span>Parser</span><strong id="parserState">WASM loading…</strong>
                 </div>
                 <div class="monitor-row">
-                    <span>Phrase</span><strong id="phraseSummary">—</strong>
+                    <span>Phrase</span><strong id="phraseSummary">-</strong>
                 </div>
                 <div class="monitor-row">
                     <span>Clock</span><strong id="clockReadout">120 BPM · 125 ms</strong>
@@ -183,14 +186,18 @@
                 <h2 class="section-title">How a phrase reads</h2>
 
                 <div class="grammar">
-                    <div><code>A–Z</code><span>chromatic keys from middle C (MIDI 60)</span></div>
-                    <div><code>1–0</code><span>ten chromatic notes leading into A</span></div>
+                    <div><code>A-Z</code><span>chromatic keys from middle C (MIDI 60)</span></div>
+                    <div><code>1-0</code><span>ten chromatic notes leading into A</span></div>
                     <div><code>,</code><span>one sixteenth of rest</span></div>
                     <div><code>.</code><span>two sixteenths of rest</span></div>
                     <div><code>!</code><span>accent the next note</span></div>
                     <div><code>?</code><span>tie into the next note (slide)</span></div>
                     <div><code>( … )</code><span>after the first pass, loop the bracket</span></div>
                     <div><span class="grammar-note">spaces and other punctuation are free</span></div>
+                </div>
+
+                <div class="tiny-print">
+                    <span>(C) 2026, Gerard Braad (Regroove | RGRV). MIT licensed.</span>
                 </div>
             </section>
         </div>
@@ -206,7 +213,7 @@
         </div>
     </nav>
 
-    <script src="wasm/rgrv.js"></script>
-    <script src="app.js"></script>
+    <script src="./wasm/rgrv.js"></script>
+    <script src="./app.js"></script>
 </body>
 </html>

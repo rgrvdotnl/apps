@@ -1,6 +1,4 @@
-/* ============================================================
-   RGRV — WebMIDI phrase arpeggiator
-   ============================================================ */
+/* RGRV WebMIDI page; styling follows the Regroove device-controller page. */
 
 :root {
     color-scheme: dark;
@@ -75,21 +73,21 @@ body {
     outline-offset: 2px;
 }
 
-.banner-mark {
-    font-size: 1.2em;
-    font-weight: bold;
-    letter-spacing: 3px;
-    padding-right: 15px;
-    border-right: 1px solid rgba(255, 255, 255, 0.35);
-    line-height: 1;
-}
-
+.banner-mark,
 .banner-title {
     font-size: 1.1em;
     font-weight: bold;
-    text-transform: uppercase;
     letter-spacing: 2px;
     line-height: 1;
+}
+
+.banner-mark {
+    padding-right: 15px;
+    border-right: 2px solid #fff;
+}
+
+.banner-title {
+    text-transform: uppercase;
     flex: 1;
 }
 
@@ -126,9 +124,7 @@ body {
 
 /* Views ------------------------------------------------------------------ */
 
-/* One view in the document at a time: Main is the instrument, Debug is the
-   readout and the grammar.  Both stay loaded, so playing keeps going when the
-   view changes. */
+/* One scene at a time; playback continues across them. */
 .scene {
     display: none;
 }
@@ -451,7 +447,7 @@ button.small-button {
     margin: 0;
 }
 
-/* Status and hints ------------------------------------------------------- */
+/* Status ----------------------------------------------------------------- */
 
 .message {
     margin-top: 15px;
@@ -575,6 +571,7 @@ button.small-button {
 
 .note-strip {
     display: flex;
+    align-items: center;
     gap: 6px;
     margin-top: 10px;
     padding: 8px;
@@ -731,21 +728,6 @@ button.small-button {
     text-transform: uppercase;
 }
 
-/* Footer ----------------------------------------------------------------- */
-
-.footer {
-    max-width: 1320px;
-    margin: 0 auto;
-    padding: 6px 20px 26px;
-    display: flex;
-    justify-content: space-between;
-    gap: 20px;
-    color: #4f4f4f;
-    font-size: 9.5px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-
 /* Responsive ------------------------------------------------------------- */
 
 @media (max-width: 900px) {
@@ -764,14 +746,14 @@ button.small-button {
         gap: 10px;
     }
 
-    .banner-mark {
-        font-size: 1em;
-        padding-right: 10px;
-    }
-
+    .banner-mark,
     .banner-title {
         font-size: 0.82em;
         letter-spacing: 1px;
+    }
+
+    .banner-mark {
+        padding-right: 10px;
     }
 
     .indicator-text {
@@ -810,10 +792,6 @@ button.small-button {
 
     .grammar {
         grid-template-columns: 1fr;
-    }
-
-    .footer {
-        padding: 0 14px 22px;
     }
 }
 

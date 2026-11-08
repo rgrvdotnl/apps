@@ -1,13 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * app.js -- WebMIDI playback for the RGRV WebAssembly bridge.
+ * app.js -- WebMIDI playback for the WebAssembly parser.
  *
- * The C side parses the phrase into the same sixteenth-note notes the CLI
- * uses; this side owns the clock and the MIDI output.  A short look-ahead
- * scheduler hands timestamped messages to the browser, which keeps timing
- * steady even when the tab's JavaScript timers hiccup.
- *
- * BTW, what are you looking for? 
+ * The C side parses the phrase; this side owns the clock and the MIDI output.
+ * Timestamped messages keep timing steady when browser timers hiccup.
  */
 (() => {
     'use strict';
@@ -17,7 +13,7 @@
     const SCHEDULER_MS = 25;
     const START_DELAY_MS = 80;
     const PREVIEW_DEBOUNCE_MS = 120;
-    const MAX_UI_GROUPS = 128;
+    const MAX_UI_ELEMENTS = 128;
 
     const state = {
         module: null,
@@ -54,18 +50,17 @@
 
     const $ = (id) => document.getElementById(id);
 
-    /* --------------------------------------------------------------------
-     * Startup
-     * ------------------------------------------------------------------ */
+    /* Startup ----------------------------------------------------------- */
 
     async function init() {
         wireEvents();
         renderStepGrid();
         populateOutputs();
+        registerServiceWorker();
 
         try {
             if (typeof createRGRV !== 'function') {
-                throw new Error('wasm/rgrv.js is missing — run "make wasm" first');
+                throw new Error('wasm/rgrv.js is missing. Run "make wasm" first');
             }
             state.module = await createRGRV({
                 locateFile: (path) => `wasm/${path}`
@@ -77,7 +72,6 @@
             state.kick = new Array(state.stepsPerBar).fill(0);
             state.snare = new Array(state.stepsPerBar).fill(0);
             renderStepGrid();
-            setVersionLabels();
 
             updatePreview();
         } catch (err) {
@@ -92,23 +86,11 @@
         }
     }
 
-    function setVersionLabels() {
-        let version = '';
-        try {
-            version = state.module.UTF8ToString(state.module._rgrv_web_version());
-        } catch (err) {
-            version = '';
-        }
-        const versionLine = $('versionLine');
-        const footerVersion = $('footerVersion');
-        if (versionLine) {
-            versionLine.textContent = version
-                ? `WebMIDI / WASM v${version}`
-                : 'WebMIDI / WASM';
-        }
-        if (footerVersion) {
-            footerVersion.textContent = version ? `v${version}` : '';
-        }
+    function registerServiceWorker() {
+        if (!('serviceWorker' in navigator)) return;
+        navigator.serviceWorker.register('./service-worker.js').catch(() => {
+            // Offline caching is optional; playback works without it.
+        });
     }
 
     function openMenu(open) {
@@ -117,7 +99,7 @@
         $('menu-overlay').classList.toggle('active', open);
         $('menu-btn').setAttribute('aria-expanded', String(open));
         menu.setAttribute('aria-hidden', String(!open));
-        // Off-screen is not absent: keep the shut menu out of the tab order.
+        // Keep the closed menu out of the tab order.
         menu.toggleAttribute('inert', !open);
     }
 
@@ -148,9 +130,10 @@
             });
         });
         $('stopBtn').addEventListener('click', () => stopPlayback('Stopped.'));
+        $('downloadBtn').addEventListener('click', downloadMidi);
 
         $('phraseInput').addEventListener('input', () => {
-            if (state.playing) stopPlayback('Stopped — phrase changed.');
+            if (state.playing) stopPlayback('Stopped: phrase changed.');
             schedulePreview();
         });
 
@@ -163,7 +146,7 @@
         }
         for (const id of ['kickInput', 'snareInput']) {
             $(id).addEventListener('input', () => {
-                if (state.playing) stopPlayback('Stopped — drum pattern changed.');
+                if (state.playing) stopPlayback('Stopped: drum pattern changed.');
                 schedulePreview();
             });
         }
@@ -178,7 +161,7 @@
         });
 
         $('midiOutput').addEventListener('change', () => {
-            if (state.playing) stopPlayback('Stopped — output changed.');
+            if (state.playing) stopPlayback('Stopped: output changed.');
             state.outputId = $('midiOutput').value;
             state.output = currentOutput();
             updateConnection();
@@ -208,7 +191,7 @@
     }
 
     function handleMusicalChange() {
-        if (state.playing) stopPlayback('Stopped — settings changed.');
+        if (state.playing) stopPlayback('Stopped: settings changed.');
         updatePreview();
     }
 
@@ -217,9 +200,7 @@
         state.previewTimer = setTimeout(updatePreview, PREVIEW_DEBOUNCE_MS);
     }
 
-    /* --------------------------------------------------------------------
-     * Parsing through the C bridge
-     * ------------------------------------------------------------------ */
+    /* Parsing ----------------------------------------------------------- */
 
     function readOptions() {
         return {
@@ -341,7 +322,7 @@
 
         const count = state.notes.length;
         const steps = state.steps;
-        let message = `Ready — ${count} note${count === 1 ? '' : 's'}`;
+        let message = `Ready: ${count} note${count === 1 ? '' : 's'}`;
         if (steps > 0) {
             message += `, ${steps} sixteenth${steps === 1 ? '' : 's'}`;
         }
@@ -359,9 +340,65 @@
         return collapsed || '(drums)';
     }
 
-    /* --------------------------------------------------------------------
-     * Visuals
-     * ------------------------------------------------------------------ */
+    /* Download ---------------------------------------------------------- */
+
+    function slugFromPhrase(text) {
+        const letters = text.match(/[A-Za-z]+/);
+        if (letters) return letters[0].toLowerCase().slice(0, 127);
+        const digits = text.match(/[0-9]+/);
+        if (digits) return digits[0].slice(0, 127);
+        return 'rgrv';
+    }
+
+    function downloadMidi() {
+        if (!state.module) {
+            setStatus('The WebAssembly parser is still loading.', 'error');
+            return;
+        }
+        if (!buildPhrase()) return;
+
+        const opts = readOptions();
+        const selected = $('channelSelect').value;
+        const channel = selected === 'all' ? 0 : Number(selected);
+        const name = slugFromPhrase($('phraseInput').value);
+        const ok = state.module.ccall(
+            'rgrv_web_build_midi',
+            'number',
+            ['number', 'number', 'number', 'string'],
+            [opts.bpm, channel, 1, name]
+        );
+
+        if (!ok) {
+            const message = state.module.UTF8ToString(
+                state.module._rgrv_web_error()
+            );
+            setStatus(message || 'Could not build the .mid file.', 'error');
+            return;
+        }
+
+        const ptr = state.module._rgrv_web_midi_ptr();
+        const size = state.module._rgrv_web_midi_size();
+        const bytes = state.module.HEAPU8.slice(ptr, ptr + size);
+        try {
+            const blob = new Blob([bytes], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${name}.mid`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+        } catch (err) {
+            setStatus(`Could not create the download: ${err.message}`, 'error');
+            return;
+        }
+
+        setStatus(
+            `We have regrooved '${state.phrase}' to ${name}.mid`,
+            'success'
+        );
+    }
+
+    /* Visuals ----------------------------------------------------------- */
 
     function renderStepGrid() {
         const grid = $('stepGrid');
@@ -390,15 +427,34 @@
             cells[i].classList.toggle('has-snare', !!state.snare[i]);
             cells[i].classList.remove('current');
         }
-        $('playheadLabel').textContent = '—';
+        $('playheadLabel').textContent = '-';
     }
 
     function renderNotes() {
         const strip = $('noteStrip');
         strip.replaceChildren();
 
+        // One element per distinct group, in first-appearance order. Repeats
+        // relight that element instead of adding another copy.
         const steps = [...state.notesByStep.keys()].sort((a, b) => a - b);
-        if (steps.length === 0) {
+        const unique = new Map();
+        for (const step of steps) {
+            const notes = state.notesByStep.get(step);
+            const signature = groupSignature(notes);
+            const seen = unique.get(signature);
+            if (seen) {
+                for (const note of notes) {
+                    const chip = seen.find((item) => item.note === note.note);
+                    if (chip) {
+                        chip.velocity = Math.max(chip.velocity, note.velocity);
+                    }
+                }
+            } else {
+                unique.set(signature, notes.map((note) => ({ ...note })));
+            }
+        }
+
+        if (unique.size === 0) {
             if (state.steps === 0) {
                 const empty = document.createElement('span');
                 empty.className = 'note-step';
@@ -408,32 +464,37 @@
             return;
         }
 
-        for (const step of steps.slice(0, MAX_UI_GROUPS)) {
+        let shown = 0;
+        for (const [signature, notes] of unique) {
+            if (shown === MAX_UI_ELEMENTS) break;
             const group = document.createElement('div');
             group.className = 'note-group';
-            group.dataset.step = String(step);
-
-            const stepLabel = document.createElement('span');
-            stepLabel.className = 'note-step';
-            stepLabel.textContent = String(step + 1).padStart(2, '0');
-            group.append(stepLabel);
-
-            for (const note of state.notesByStep.get(step)) {
+            group.dataset.signature = signature;
+            for (const note of notes) {
                 const chip = document.createElement('span');
-                chip.className = 'note-chip' + (note.velocity >= 127 ? ' accent' : '');
+                chip.className =
+                    'note-chip' + (note.velocity >= 127 ? ' accent' : '');
                 chip.textContent = noteName(note.note);
                 chip.title = `MIDI ${note.note} · velocity ${note.velocity}`;
                 group.append(chip);
             }
             strip.append(group);
+            shown++;
         }
 
-        if (steps.length > MAX_UI_GROUPS) {
+        if (unique.size > MAX_UI_ELEMENTS) {
             const more = document.createElement('span');
             more.className = 'note-step';
-            more.textContent = `+${steps.length - MAX_UI_GROUPS}`;
+            more.textContent = `+${unique.size - MAX_UI_ELEMENTS}`;
             strip.append(more);
         }
+    }
+
+    function groupSignature(notes) {
+        return notes
+            .map((note) => note.note)
+            .sort((a, b) => a - b)
+            .join(',');
     }
 
     function updatePlayhead(step, position) {
@@ -444,12 +505,14 @@
             grid.children[i].classList.toggle('current', i === lane);
         }
 
+        const sounding = state.notesByStep.get(position);
+        const signature = sounding ? groupSignature(sounding) : '';
         for (const group of $('noteStrip').children) {
-            if (!(group instanceof HTMLElement) || !group.dataset.step) continue;
-            group.classList.toggle(
-                'current',
-                Number(group.dataset.step) === position
-            );
+            if (!(group instanceof HTMLElement) || !group.dataset.signature) {
+                continue;
+            }
+            group.classList.toggle('current',
+                group.dataset.signature === signature);
         }
 
         const bar = Math.floor(step / state.stepsPerBar) + 1;
@@ -466,9 +529,11 @@
             cell.classList.remove('current');
         }
         for (const group of $('noteStrip').children) {
-            if (group instanceof HTMLElement) group.classList.remove('current');
+            if (group instanceof HTMLElement) {
+                group.classList.remove('current');
+            }
         }
-        $('playheadLabel').textContent = '—';
+        $('playheadLabel').textContent = '-';
         state.lastPosition = -1;
     }
 
@@ -500,7 +565,7 @@
         } else if (state.kick.some(Boolean) || state.snare.some(Boolean)) {
             summary.textContent = 'drums only';
         } else {
-            summary.textContent = '—';
+            summary.textContent = '-';
         }
 
         const opts = readOptions();
@@ -518,9 +583,7 @@
             : 'No output';
     }
 
-    /* --------------------------------------------------------------------
-     * MIDI access and outputs
-     * ------------------------------------------------------------------ */
+    /* MIDI outputs ------------------------------------------------------ */
 
     async function initMidiAccess({ notify = false } = {}) {
         if (!navigator.requestMIDIAccess) {
@@ -561,7 +624,7 @@
             candidate.id === previous);
         if (state.playing && previous &&
             (!output || output.state === 'disconnected')) {
-            stopPlayback('Stopped — MIDI output disconnected.');
+            stopPlayback('Stopped: MIDI output disconnected.');
         }
         populateOutputs();
     }
@@ -655,9 +718,7 @@
         return `channel ${Number(value) + 1}`;
     }
 
-    /* --------------------------------------------------------------------
-     * Playback
-     * ------------------------------------------------------------------ */
+    /* Playback ---------------------------------------------------------- */
 
     function isLooping() {
         return $('loopToggle').checked;
@@ -670,7 +731,7 @@
         }
         if (state.playing) stopPlayback();
 
-        // A debounced preview could otherwise reparse and repaint mid-play.
+        // A pending preview must not reparse and repaint mid-play.
         clearTimeout(state.previewTimer);
 
         if (!buildPhrase()) return;
@@ -709,7 +770,7 @@
         try {
             state.output.clear();
         } catch (err) {
-            // clear() is part of WebMIDI, but not every shim implements it.
+            // Not every WebMIDI shim implements clear().
         }
         allNotesOff(state.output, state.playingChannels);
         clearPlayhead();
@@ -839,7 +900,7 @@
             try {
                 state.output.clear();
             } catch (err) {
-                // A shim without clear() still gets the all-notes-off.
+                // The all-notes-off below still runs.
             }
             allNotesOff(
                 state.output,
@@ -860,7 +921,7 @@
             try {
                 output.send([0xB0 | channel, 123, 0]);
             } catch (err) {
-                // The output may have just disappeared; nothing to clean.
+                // The output may have just disappeared.
             }
         }
     }
@@ -868,8 +929,10 @@
     function updateTransportButtons() {
         const play = $('playBtn');
         const stop = $('stopBtn');
+        const download = $('downloadBtn');
         play.disabled = state.playing || !state.module;
         stop.disabled = !state.playing;
+        download.disabled = !state.module;
         play.textContent = state.playing ? '▶ Playing' : '▶ Regroove';
     }
 
