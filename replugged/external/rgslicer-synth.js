@@ -2,8 +2,12 @@
 // Wraps the RGSlicer WASM synth in an AudioWorklet
 
 class RGSlicerSynth {
-    constructor(audioContext) {
+    constructor(audioContext, options = {}) {
         this.audioContext = audioContext;
+        /* A page outside rfxsynths names where its rgslicer.js/wasm live;
+         * without it the old relative guess is kept. */
+        this.wasmBase = options.wasmBase;
+        this.wasmVersion = options.wasmVersion || '';
         this.workletNode = null;
         this.masterGain = null;
         this.speakerGain = null;
@@ -57,6 +61,7 @@ class RGSlicerSynth {
                 } else if (type === 'ready') {
                     console.log('[RGSlicer] WASM Slicer ready');
                     this.wasmReady = true;
+                    this.emit('ready');
 
                     // Process any pending notes
                     for (const note of this.pendingNotes) {
@@ -90,9 +95,13 @@ class RGSlicerSynth {
             console.log('[RGSlicer] Loading WASM...');
 
             // Fetch both JS glue code and WASM binary
+            const base = this.wasmBase !== undefined
+                ? this.wasmBase
+                : (window.location.pathname.includes('/rfxsynths') ? '' : 'synths/');
+            const stamp = this.wasmVersion ? `?v=${this.wasmVersion}` : '';
             const [jsResponse, wasmResponse] = await Promise.all([
-                fetch(`${window.location.pathname.includes('/rfxsynths') ? '' : 'synths/'}rgslicer.js`),
-                fetch(`${window.location.pathname.includes('/rfxsynths') ? '' : 'synths/'}rgslicer.wasm`)
+                fetch(`${base}rgslicer.js${stamp}`),
+                fetch(`${base}rgslicer.wasm${stamp}`)
             ]);
 
             const jsCode = await jsResponse.text();
@@ -168,6 +177,14 @@ class RGSlicerSynth {
 
     getParameterInfo() {
         return RGSlicerSynth.getParameterInfo();
+    }
+
+    setParameter(index, value) {
+        if (!this.workletNode) return;
+        this.workletNode.port.postMessage({
+            type: 'setParameter',
+            data: { index, value }
+        });
     }
 
     noteOn(note, velocity) {

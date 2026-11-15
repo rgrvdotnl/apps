@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="RegrooveFX Slicer - cue points, auto-slice and WAV export for RGSlicer">
+    <meta name="theme-color" content="#CF1A37">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RegrooveFX Slicer">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/svg+xml" href="../replugged/favicon.svg">
+    <link rel="icon" type="image/png" sizes="96x96" href="../replugged/favicon-96x96.png">
+    <link rel="apple-touch-icon" href="../replugged/apple-touch-icon.png">
+    <title>RegrooveFX Slicer</title>
+    <link rel="stylesheet" href="../replugged/style.css">
+    <link rel="stylesheet" href="./slicer.css">
+</head>
+<body>
+    <div class="top-banner">
+        <div class="banner-title">RegrooveFX Slicer</div>
+    </div>
+
+    <div class="container slicer-page">
+        <section class="card slicer-toolbar">
+            <button id="importBtn" class="btn-primary">📁 Import</button>
+            <button id="exportBtn" disabled>⬇ Export</button>
+            <button id="autoSliceBtn" disabled>AUTO SLICE</button>
+            <label class="slicer-sens">SENS
+                <input type="range" id="sens" min="0" max="100" value="50">
+                <span id="sensVal">50</span>
+            </label>
+            <button id="playWholeBtn" disabled>PLAY WHOLE</button>
+            <button id="playRandomBtn" disabled>PLAY RANDOM</button>
+            <button id="stopBtn" disabled>STOP</button>
+            <span id="sliceCount" class="slicer-count">SLICES 0</span>
+            <span id="fileLabel" class="slicer-file">No sample</span>
+            <span id="status" class="slicer-status"></span>
+            <input type="file" id="fileInput" accept="audio/*,.wav" hidden>
+        </section>
+
+        <section class="card slicer-wave-card">
+            <canvas id="waveform" class="slicer-wave" aria-label="Sample waveform"></canvas>
+            <div class="slicer-hint">
+                Click to add a cue · drag a flag to move · right-click a flag to remove
+            </div>
+        </section>
+
+        <section class="card slicer-pads-card">
+            <div class="slicer-pads-head">
+                <span>PADS</span>
+                <div class="slicer-pads-tools">
+                    <button id="octDown" class="slicer-oct" title="Previous 16 slices">OCT−</button>
+                    <span id="padPage" class="slicer-page-ind">PAGE 1/1</span>
+                    <button id="octUp" class="slicer-oct" title="Next 16 slices">OCT+</button>
+                    <button id="fsPads" class="slicer-fs" title="Fullscreen pads">⛶</button>
+                </div>
+            </div>
+            <div class="drum-pads slicer-pads" id="pads"></div>
+        </section>
+    </div>
+
+    <script src="../replugged/external/rgslicer-synth.js?v=20251115e"></script>
+    <script src="./slicer-fallback.js?v=20251115e"></script>
+    <script src="./slicer.js?v=20251115e"></script>
+</body>
+</html>
