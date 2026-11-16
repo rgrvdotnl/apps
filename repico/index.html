@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReGINE NT Pico</title>
+    <meta name="theme-color" content="#CF1A37">
+    <meta name="description" content="ReGINE Pico: upload units, edit parameters and play over Web MIDI">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" type="image/png" sizes="96x96" href="./favicon-96x96.png">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="top-banner">
+        <button class="hamburger-button" id="menu-btn" aria-label="Menu">☰</button>
+        <div class="banner-title">ReGINE NT Pico</div>
+        <div class="connection-indicator" id="connection">
+            <span class="indicator-dot"></span>
+            <span class="indicator-text" id="connectionText">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="menu-overlay" id="nav-overlay"></div>
+    <div class="menu-panel" id="nav-menu">
+        <button class="menu-close" id="close-menu" aria-label="Close">×</button>
+        <div class="menu-items">
+            <div class="nav-item" id="uploadBtn">📁 Upload new unit</div>
+            <div class="nav-item active" data-scene="main">Main</div>
+            <div class="nav-item" data-scene="seq">Sequencer</div>
+            <div class="nav-item" data-scene="config">Config</div>
+            <div class="nav-item" data-scene="units">Units</div>
+            <div class="nav-item" data-scene="debug">Debug</div>
+            <div style="border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px;">
+                <div class="nav-item" id="aboutBtn">About / Credits</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="aboutOverlay"></div>
+    <div class="modal" id="aboutModal">
+        <div class="modal-header">
+            <h2>About ReGINE NT Pico</h2>
+            <button class="modal-close" id="aboutClose" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+            <p>Synth unit host and controller for 'RePICO' (RP2350)</p>
+            <p>
+                Uses: Pico SDK, Pico Extras, TinyUSB, libfeuer, ReGINE NT Host
+                and Web MIDI.
+            </p>
+            <p style="margin-top: 20px; font-size: 0.9em; color: #999;">
+                Created by Gerard Braad (Regroove | RGRV)
+            </p>
+        </div>
+    </div>
+
+    <div id="scene-main" class="scene active">
+        <div class="container">
+            <section class="section" id="connect-hint">
+                <div class="status-item">No device. Please connect.</div>
+            </section>
+
+            <section class="section" id="params-section">
+                <div class="section-title">
+                    <span id="unitName">No unit stored</span>
+                    <button class="icon-btn" id="paramsFullscreen" title="Toggle Fullscreen" style="margin-left: auto;">⛶</button>
+                </div>
+                <div class="status-item" id="unitMeta">Connect to the native USB-C port, then upload a unit.</div>
+                <input type="file" id="unitFile" accept=".nts1mkiiunit,.nts3unit,.unit" hidden>
+                <div class="knob-grid" id="knobs"></div>
+                <div class="status-item" id="knobsEmpty">No parameters. Upload a unit, or connect to a device that has one.</div>
+            </section>
+
+            <section class="section" id="effect-section" hidden>
+                <div class="section-title">
+                    <span id="fxName">Effects</span>
+                    <button class="icon-btn" id="fxFullscreen" title="Toggle Fullscreen" style="margin-left: auto;">⛶</button>
+                </div>
+                <div class="knob-grid" id="fxKnobs"></div>
+                <div class="status-item" id="fxEmpty">No effect loaded.</div>
+            </section>
+
+            <section class="section" id="keyboard-section">
+                <div class="section-title">
+                    <span>Keyboard</span>
+                    <button class="icon-btn" id="keyboardFullscreen" title="Toggle Fullscreen" style="margin-left: auto;">⛶</button>
+                </div>
+                <div class="keyboard-controls">
+                    <div class="octave-controls">
+                        <button class="octave-btn" id="octaveDown">-</button>
+                        <span id="octaveLabel">C3 - B4</span>
+                        <button class="octave-btn" id="octaveUp">+</button>
+                    </div>
+                </div>
+                <div class="keyboard-container visible">
+                    <div class="piano-keyboard" id="piano"></div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="scene-seq" class="scene">
+        <div class="container">
+            <section class="section scene-hint">
+                <div class="status-item">No device. Please connect.</div>
+            </section>
+            <section class="section" id="seq-section" hidden>
+                <div class="section-title">
+                    <span>Sequencer</span>
+                    <button class="icon-btn" id="seqFullscreen" title="Toggle Fullscreen" style="margin-left: auto;">⛶</button>
+                </div>
+                <div class="seq-transport">
+                    <button class="octave-btn" id="seqPlay">Play</button>
+                    <button class="octave-btn" id="seqStop">Stop</button>
+                    <span class="status-item" id="seqState">Stopped, step 1/64, 120 BPM</span>
+                </div>
+                <div class="seq-transport">
+                    <button class="octave-btn" id="seqImport">Import MIDI</button>
+                    <button class="octave-btn" id="seqExport">Export MIDI</button>
+                    <input type="file" id="seqFile" accept=".mid,.midi" hidden>
+                </div>
+                <div class="seq-grid" id="seqGrid"></div>
+                <div class="status-item" id="seqSel">Step 1</div>
+                <button class="octave-btn" id="seqGate">Gate Off</button>
+                <div class="knob-grid" id="seqKnobs"></div>
+            </section>
+        </div>
+    </div>
+
+    <div id="scene-config" class="scene">
+        <div class="container">
+            <section class="section scene-hint">
+                <div class="status-item">No device. Please connect.</div>
+            </section>
+            <section class="section" id="config-section" hidden>
+                <div class="section-title">
+                    <span>Config</span>
+                    <button class="icon-btn" id="configFullscreen" title="Toggle Fullscreen" style="margin-left: auto;">⛶</button>
+                </div>
+                <div class="seq-transport">
+                    <button class="octave-btn" id="envMode">ENV ADSR</button>
+                    <button class="octave-btn" id="transportMode">TRANSPORT MASTER</button>
+                </div>
+                <div class="knob-grid" id="configKnobs"></div>
+            </section>
+        </div>
+    </div>
+
+    <div id="scene-units" class="scene">
+        <div class="container">
+            <section class="section">
+                <div class="section-title">Unit management</div>
+                <div class="status-item" id="unitHint">The active slot is shown in green. Select a slot to load it.</div>
+                <div class="unit-modules" id="unitModules"></div>
+                <div class="unit-slots" id="unitSlots"></div>
+                <input type="file" id="unitMgmtFile" accept=".nts1mkiiunit,.nts3unit,.unit" hidden>
+            </section>
+        </div>
+    </div>
+
+    <div id="scene-debug" class="scene">
+        <div class="container">
+            <section class="section">
+                <div class="section-title">Log</div>
+                <div id="log" style="padding: 10px; background: #0a0a0a; border: 1px solid #333; border-radius: 4px; font-family: monospace; font-size: 10px; max-height: 200px; overflow-y: auto; color: #aaa;"><div>No messages</div></div>
+            </section>
+        </div>
+    </div>
+
+    <script src="vendor/pad-knob.js"></script>
+    <script src="vendor/piano-keyboard.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
